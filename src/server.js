@@ -1,6 +1,10 @@
-require('dotenv').config()
-const { createApp } = require('./app')
-const { connectDB } = require('./config/db')
+// require('dotenv').config()
+import 'dotenv/config' 
+import { connectDB } from './config/db.js'
+await connectDB()
+import { createApp } from './app.js'
+
+
 
 const PORT = process.env.PORT || 4000
 const ALLOW =

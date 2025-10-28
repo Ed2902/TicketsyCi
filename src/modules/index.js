@@ -1,8 +1,13 @@
-const { Router } = require('express')
-const router = Router()
+import { Router } from 'express';
+const router = Router();
 
-router.get('/health', (req, res) => {
-  res.json({ ok: true, service: 'tickets', ts: new Date().toISOString() })
-})
+// Ruta de prueba
+router.get('/health', (_req, res) => {
+  res.json({
+    ok: true,
+    message: '✅ Servicio operativo desde routes',
+    timestamp: new Date().toISOString()
+  });
+});
 
-module.exports = router
+export default router;

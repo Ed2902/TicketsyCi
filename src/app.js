@@ -1,34 +1,89 @@
-const express = require('express')
-const morgan = require('morgan')
-const helmet = require('helmet')
-const cors = require('cors')
+// src/app.js
+import express from 'express'
+import morgan from 'morgan'
+import helmet from 'helmet'
+import cors from 'cors'
+import fs from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
 
-const routes = require('./modules')
-const { notFound } = require('./middlewares/notFound.js')
-const { errorHandler } = require('./middlewares/errorHandler')
+import routes from './modules/index.js'
+import areasRouter from './modules/CrearArea/router.js'
+import notFound from './middlewares/notFound.js'
+import errorHandler from './middlewares/errorHandler.js'
 
 // Swagger UI (sirve /docs)
-const swaggerUi = require('swagger-ui-express')
+import swaggerUi from 'swagger-ui-express'
+import { Ticket } from './modules/CrearTicket/model.js'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
 let swaggerFile = {}
 try {
-  swaggerFile = require('./swagger_output.json')
+  const p = path.join(__dirname, 'swagger_output.json')
+  if (fs.existsSync(p)) {
+    const raw = fs.readFileSync(p, 'utf8')
+    swaggerFile = JSON.parse(raw)
+  } else {
+    console.warn('⚠️  Falta swagger_output.json. Ejecuta: npm run swagger')
+  }
 } catch {
-  console.warn('⚠️  Falta swagger_output.json. Ejecuta: npm run swagger')
+  console.warn('⚠️  No se pudo cargar swagger_output.json. Ejecuta: npm run swagger')
 }
 
-function createApp() {
+export function createApp() {
   const app = express()
 
+  // 🧩 MIDDLEWARES BÁSICOS
   app.use(cors())
   app.use(helmet())
   app.use(express.json())
   app.use(morgan('dev'))
 
-  // Documentación
+  // Documentación Swagger
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerFile))
 
-  // Prefijo REAL de la API
-  app.use('/ticket', routes)
+  // Prefijos de API
+  app.use('/api', routes)            // otros módulos que agrupes en index.js
+  app.use('/api/areas', areasRouter) // módulo de Áreas
+
+  // === Endpoint para CREAR Ticket ===
+  app.post('/api/tickets', async (req, res, next) => {
+    try {
+      const { title, description, priority, category, assignee } = req.body || {}
+
+      const orgId = req.header('x-org-id') || 'impresistem'
+      const createdBy = req.header('x-principal-id') || 'usr_luis_puentes'
+
+      if (!title || !description) {
+        return res.status(400).json({
+          error: true,
+          message: 'Campos requeridos: title y description'
+        })
+      }
+
+      // Fallback si no viene assignee
+      const finalAssignee = assignee && assignee.type && assignee.id
+        ? assignee
+        : { type: 'person', id: createdBy, name: undefined }
+
+      const ticket = await Ticket.create({
+        orgId,
+        title,
+        description,
+        priority,
+        category,
+        assignee: finalAssignee,
+        createdBy
+      })
+
+      return res.status(201).json(ticket)
+    } catch (error) {
+      console.error('❌ Error creando ticket:', error)
+      next(error)
+    }
+  })
 
   // 404 y errores
   app.use(notFound)
@@ -37,4 +92,4 @@ function createApp() {
   return app
 }
 
-module.exports = { createApp }
+export default { createApp }

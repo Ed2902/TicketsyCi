@@ -1,4 +1,4 @@
-function notFound(req, res) {
+export function notFound(req, res) {
   res.status(404).json({ error: 'Not Found' })
 }
-module.exports = { notFound }
+export default notFound
