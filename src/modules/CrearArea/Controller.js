@@ -5,6 +5,7 @@ import {
   updateArea,
   softDeleteArea
 } from '../CrearArea/services.js';
+  // CrearArea Controller
 
 export async function create(req, res, next) {
   try {
@@ -22,7 +23,7 @@ export async function create(req, res, next) {
     next(e);
   }
 }
-
+  // Listar áreas
 export async function list(req, res, next) {
   try {
     const orgId = req.header('x-org-id') || 'impresistem';
@@ -33,7 +34,7 @@ export async function list(req, res, next) {
     next(e);
   }
 }
-
+ // Detalle de área por ID
 export async function detail(req, res, next) {
   try {
     const orgId = req.header('x-org-id') || 'impresistem';
@@ -45,7 +46,7 @@ export async function detail(req, res, next) {
     next(e);
   }
 }
-
+ // Actualizar área por ID
 export async function patch(req, res, next) {
   try {
     const orgId = req.header('x-org-id') || 'impresistem';
@@ -55,11 +56,11 @@ export async function patch(req, res, next) {
     if (!doc) return res.status(404).json({ error: true, message: 'Área no encontrada' });
     res.json(doc);
   } catch (e) {
-    // también podrías capturar 11000 aquí si cambian name a un duplicado
+  
     next(e);
   }
 }
-
+// Borrado suave de área por ID
 export async function remove(req, res, next) {
   try {
     const orgId = req.header('x-org-id') || 'impresistem';
