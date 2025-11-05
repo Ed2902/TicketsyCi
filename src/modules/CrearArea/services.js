@@ -1,43 +1,49 @@
-import mongoose from 'mongoose';
-import { Area } from '../CrearArea/model.js';
+// src/modules/CrearArea/services.js
+import e from 'express';
+import { Area } from './model.js';
 
-export function createArea({ orgId, createdBy, payload }) {
+export async function createArea({ orgId, createdBy, payload }) {
   return Area.create({
     orgId,
     createdBy,
     name: payload.name,
-    description: payload.description
+    description: payload.description ?? ''
   });
 }
 
-export function listAreas({ orgId, onlyActive }) {
-  const q = { orgId };
-  if (typeof onlyActive === 'boolean') q.active = onlyActive;
-  return Area.find(q).sort({ name: 1 });
+export async function listAreas({ orgId, onlyActive }) {
+  const filter = { orgId };
+  if (typeof onlyActive === 'boolean') {
+    filter.active = onlyActive;
+  }
+  return Area.find(filter).sort({ name: 1 }).lean();
 }
 
-export function getAreaById({ orgId, id }) {
-  return Area.findOne({ _id: new mongoose.Types.ObjectId(id), orgId });
+export async function getAreaById({ orgId, id }) {
+  return Area.findOne({ _id: id, orgId }).lean();
 }
 
-export function updateArea({ orgId, id, payload }) {
+export async function updateArea({ orgId, id, payload }) {
   return Area.findOneAndUpdate(
-    { _id: new mongoose.Types.ObjectId(id), orgId },
+    { _id: id, orgId },
     { $set: payload },
     { new: true }
-  );
+  ).lean();
 }
 
-// Borrado suave: active=false (mejor para histórico)
-export function softDeleteArea({ orgId, id }) {
+export async function softDeleteArea({ orgId, id }) {
   return Area.findOneAndUpdate(
-    { _id: new mongoose.Types.ObjectId(id), orgId },
+    { _id: id, orgId },
     { $set: { active: false } },
     { new: true }
-  );
+  ).lean();
 }
 
-// Si necesitas borrado duro:
-// export function hardDeleteArea({ orgId, id }) {
-//   return Area.deleteOne({ _id: new mongoose.Types.ObjectId(id), orgId });
-// }
+
+  
+export async function allAreas({ orgId } = {}) {
+  const filter = {};
+  if (orgId) filter.orgId = orgId;
+  return Area.find(filter).lean();
+}
+

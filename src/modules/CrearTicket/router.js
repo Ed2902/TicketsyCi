@@ -1,15 +1,24 @@
 import { Router } from 'express';
-import { validate } from './validator.js';   
-import { createTicketSchema } from './validator.js';
+import { validate } from '../../middlewares/validate.js';
+import {
+  listSchema,
+  idParamSchema,
+  createTicketSchema,
+  updateTicketSchema,
+  listAllTicketsSchema
+} from './validator.js';
 import * as Controller from './controller.js';
 
 const router = Router();
 
-// POST /api/tickets  → crear nuevo ticket
-router.post('/tickets', validate(createTicketSchema), Controller.create);
+router.get('/', validate(listSchema), Controller.list);
+router.get('/all', validate(listAllTicketsSchema), Controller.all);
+router.get('/:id', validate(idParamSchema), Controller.detail);
+router.post('/', validate(createTicketSchema), Controller.create);
+router.patch('/:id', validate(updateTicketSchema), Controller.update);
+router.delete('/:id', validate(idParamSchema), Controller.remove);
 
-// Health opcional del módulo
-router.get('/tickets/health', (_req, res) => {
+router.get('/health/ping', (_req, res) => {
   res.json({ ok: true, module: 'CrearTicket', ts: new Date().toISOString() });
 });
 
