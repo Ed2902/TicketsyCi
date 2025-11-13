@@ -6,7 +6,7 @@
     "version": "1.0.0"
   },
   "host": "localhost:4000",
-  "basePath": "/",
+  "basePath": "/tikets",
   "schemes": [
     "http"
   ],
@@ -17,13 +17,1302 @@
     "application/json"
   ],
   "paths": {
-    "/ticket/health": {
+    "API_PREFIX/health": {
       "get": {
         "description": "",
         "responses": {
           "200": {
             "description": "OK"
           }
+        }
+      }
+    },
+    "/messages/by-ticket/{ticketId}": {
+      "get": {
+        "tags": [
+          "Messages"
+        ],
+        "description": "Lista mensajes por ID de ticket",
+        "parameters": [
+          {
+            "name": "ticketId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "x-org-id",
+            "in": "header",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/messages/all": {
+      "get": {
+        "tags": [
+          "Messages"
+        ],
+        "description": "Lista todos los mensajes",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/messages/{id}": {
+      "get": {
+        "tags": [
+          "Messages"
+        ],
+        "description": "Detalle de mensaje por ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "x-org-id",
+            "in": "header",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Messages"
+        ],
+        "description": "Editar un mensaje existente",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "x-org-id",
+            "in": "header",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Messages"
+        ],
+        "description": "Eliminar un mensaje",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "x-org-id",
+            "in": "header",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/messages": {
+      "post": {
+        "tags": [
+          "Messages"
+        ],
+        "description": "Crea un nuevo mensaje",
+        "responses": {
+          "201": {
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/messages/health/ping": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "description": "Health check del módulo Messages",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/tickets": {
+      "get": {
+        "tags": [
+          "Tickets"
+        ],
+        "description": "Listar tickets con filtros",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "type": "string"
+          },
+          {
+            "name": "statusId",
+            "in": "query",
+            "type": "string"
+          },
+          {
+            "name": "priorityId",
+            "in": "query",
+            "type": "string"
+          },
+          {
+            "name": "categoryId",
+            "in": "query",
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "type": "string"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Tickets"
+        ],
+        "description": "Crear un ticket nuevo",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "reporter": {
+                  "example": "any"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Bad Request"
+          }
+        }
+      }
+    },
+    "/tickets/all": {
+      "get": {
+        "tags": [
+          "Tickets"
+        ],
+        "description": "Lista todos los tickets",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/tickets/{id}": {
+      "get": {
+        "tags": [
+          "Tickets"
+        ],
+        "description": "Detalle de ticket por ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Tickets"
+        ],
+        "description": "Actualizar un ticket",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Tickets"
+        ],
+        "description": "Eliminar un ticket",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/tickets/health/ping": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "description": "Health check del módulo Tickets",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/notifications": {
+      "get": {
+        "tags": [
+          "Notifications"
+        ],
+        "description": "Lista notificaciones con filtros",
+        "parameters": [
+          {
+            "name": "x-org-id",
+            "in": "header",
+            "type": "string"
+          },
+          {
+            "name": "x-principal-id",
+            "in": "header",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Notifications"
+        ],
+        "description": "Crear una notificación",
+        "responses": {
+          "201": {
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/notifications/all": {
+      "get": {
+        "tags": [
+          "Notifications"
+        ],
+        "description": "Lista todas las notificaciones",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/notifications/{id}": {
+      "get": {
+        "tags": [
+          "Notifications"
+        ],
+        "description": "Detalle de notificación por ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "x-org-id",
+            "in": "header",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Notifications"
+        ],
+        "description": "Eliminar una notificación por ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "x-org-id",
+            "in": "header",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/notifications/{id}/read": {
+      "patch": {
+        "tags": [
+          "Notifications"
+        ],
+        "description": "Marca una notificación como leída/no leída",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "x-org-id",
+            "in": "header",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/notifications/read-all": {
+      "patch": {
+        "tags": [
+          "Notifications"
+        ],
+        "description": "Marca todas las notificaciones como leídas/no leídas",
+        "parameters": [
+          {
+            "name": "x-org-id",
+            "in": "header",
+            "type": "string"
+          },
+          {
+            "name": "x-principal-id",
+            "in": "header",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/notifications/health/ping": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "description": "Health check del módulo Notifications",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/files": {
+      "post": {
+        "tags": [
+          "Files"
+        ],
+        "description": "Crear metadata de archivo",
+        "parameters": [
+          {
+            "name": "x-org-id",
+            "in": "header",
+            "type": "string"
+          },
+          {
+            "name": "x-principal-id",
+            "in": "header",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/files/by-ticket/{ticketId}": {
+      "get": {
+        "tags": [
+          "Files"
+        ],
+        "description": "Listar archivos de un ticket",
+        "parameters": [
+          {
+            "name": "ticketId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "x-org-id",
+            "in": "header",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/files/all": {
+      "get": {
+        "tags": [
+          "Files"
+        ],
+        "description": "Listar todos los archivos",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/files/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "description": "Health check del módulo Files",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/areas": {
+      "post": {
+        "tags": [
+          "Areas"
+        ],
+        "description": "Crear una nueva área",
+        "parameters": [
+          {
+            "name": "x-principal-id",
+            "in": "header",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "409": {
+            "description": "Conflict"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Areas"
+        ],
+        "description": "Lista áreas (paginado/filtrado)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          }
+        }
+      }
+    },
+    "/areas/all": {
+      "get": {
+        "tags": [
+          "Areas"
+        ],
+        "description": "Lista todas las áreas",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/areas/{id}": {
+      "get": {
+        "tags": [
+          "Areas"
+        ],
+        "description": "Detalle de un área por ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Areas"
+        ],
+        "description": "Actualizar área por ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Areas"
+        ],
+        "description": "Eliminar área por ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/areas/health/ping": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "description": "Health check del módulo Areas",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/teams/all": {
+      "get": {
+        "tags": [
+          "Teams"
+        ],
+        "description": "Lista todos los equipos",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/teams": {
+      "post": {
+        "tags": [
+          "Teams"
+        ],
+        "description": "Crea un nuevo equipo",
+        "parameters": [
+          {
+            "name": "x-org-id",
+            "in": "header",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "409": {
+            "description": "Conflict"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Teams"
+        ],
+        "description": "Lista equipos (paginado/filtrado)",
+        "parameters": [
+          {
+            "name": "x-org-id",
+            "in": "header",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/teams/{id}": {
+      "get": {
+        "tags": [
+          "Teams"
+        ],
+        "description": "Detalle de equipo por ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "x-org-id",
+            "in": "header",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Teams"
+        ],
+        "description": "Actualizar un equipo por ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "x-org-id",
+            "in": "header",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Teams"
+        ],
+        "description": "Eliminar un equipo por ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "x-org-id",
+            "in": "header",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/teams/health/ping": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "description": "Health check del módulo Teams",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "Area": {
+      "type": "object",
+      "properties": {
+        "_id": {
+          "type": "string",
+          "example": "string"
+        },
+        "orgId": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "example": "string"
+            },
+            "enum": {
+              "type": "array",
+              "example": [
+                "fastway",
+                "metalharvest",
+                "greenway"
+              ],
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "name": {
+          "type": "string",
+          "example": "string"
+        },
+        "description": {
+          "type": "string",
+          "example": "string"
+        },
+        "active": {
+          "type": "boolean",
+          "example": true
+        },
+        "createdBy": {
+          "type": "string",
+          "example": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "example": "2025-01-01T12:00:00Z"
+        },
+        "updatedAt": {
+          "type": "string",
+          "example": "2025-01-01T12:00:00Z"
+        }
+      }
+    },
+    "Ticket": {
+      "type": "object",
+      "properties": {
+        "_id": {
+          "type": "string",
+          "example": "string"
+        },
+        "orgId": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "example": "string"
+            },
+            "enum": {
+              "type": "array",
+              "example": [
+                "fastway",
+                "metalharvest",
+                "greenway"
+              ],
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "code": {
+          "type": "string",
+          "example": "string"
+        },
+        "title": {
+          "type": "string",
+          "example": "string"
+        },
+        "description": {
+          "type": "string",
+          "example": "string"
+        },
+        "categoryId": {
+          "type": "string",
+          "example": "string"
+        },
+        "priorityId": {
+          "type": "string",
+          "example": "string"
+        },
+        "statusId": {
+          "type": "string",
+          "example": "string"
+        },
+        "reporter": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "example": "string"
+            },
+            "name": {
+              "type": "string",
+              "example": "string"
+            },
+            "email": {
+              "type": "string",
+              "example": "string"
+            }
+          }
+        },
+        "assignee": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "example": "string"
+                },
+                "enum": {
+                  "type": "array",
+                  "example": [
+                    "person",
+                    "team"
+                  ],
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "id": {
+              "type": "string",
+              "example": "string"
+            },
+            "name": {
+              "type": "string",
+              "example": "string"
+            }
+          }
+        },
+        "watchers": {
+          "type": "array",
+          "example": [
+            "string"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "attachmentsCount": {
+          "type": "number",
+          "example": 0
+        },
+        "tags": {
+          "type": "array",
+          "example": [
+            "string"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "custom": {
+          "type": "object",
+          "properties": {}
+        },
+        "dueAt": {
+          "type": "string",
+          "example": "2025-01-01T14:00:00Z"
+        },
+        "createdAt": {
+          "type": "string",
+          "example": "2025-01-01T12:00:00Z"
+        },
+        "updatedAt": {
+          "type": "string",
+          "example": "2025-01-01T12:00:00Z"
+        }
+      }
+    },
+    "File": {
+      "type": "object",
+      "properties": {
+        "_id": {
+          "type": "string",
+          "example": "string"
+        },
+        "orgId": {
+          "type": "string",
+          "example": "string"
+        },
+        "ticketId": {
+          "type": "string",
+          "example": "string"
+        },
+        "ownerPrincipalId": {
+          "type": "string",
+          "example": "string"
+        },
+        "name": {
+          "type": "string",
+          "example": "string"
+        },
+        "mimeType": {
+          "type": "string",
+          "example": "image/png"
+        },
+        "size": {
+          "type": "number",
+          "example": 12345
+        },
+        "storage": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string",
+              "example": "local"
+            },
+            "path": {
+              "type": "string",
+              "example": "string"
+            }
+          }
+        },
+        "createdAt": {
+          "type": "string",
+          "example": "2025-01-01T12:00:00Z"
+        },
+        "updatedAt": {
+          "type": "string",
+          "example": "2025-01-01T12:00:00Z"
+        }
+      }
+    },
+    "TicketMessage": {
+      "type": "object",
+      "properties": {
+        "_id": {
+          "type": "string",
+          "example": "string"
+        },
+        "orgId": {
+          "type": "string",
+          "example": "string"
+        },
+        "ticketId": {
+          "type": "string",
+          "example": "string"
+        },
+        "sender": {
+          "type": "object",
+          "properties": {
+            "principalId": {
+              "type": "string",
+              "example": "string"
+            },
+            "name": {
+              "type": "string",
+              "example": "string"
+            },
+            "email": {
+              "type": "string",
+              "example": "string"
+            }
+          }
+        },
+        "message": {
+          "type": "string",
+          "example": "string"
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "fileId": {
+                "type": "string",
+                "example": "string"
+              },
+              "name": {
+                "type": "string",
+                "example": "string"
+              },
+              "mime": {
+                "type": "string",
+                "example": "string"
+              },
+              "size": {
+                "type": "number",
+                "example": 1234
+              }
+            }
+          }
+        },
+        "createdAt": {
+          "type": "string",
+          "example": "2025-01-01T12:00:00Z"
+        },
+        "updatedAt": {
+          "type": "string",
+          "example": "2025-01-01T12:00:00Z"
+        }
+      }
+    },
+    "Notification": {
+      "type": "object",
+      "properties": {
+        "_id": {
+          "type": "string",
+          "example": "string"
+        },
+        "orgId": {
+          "type": "string",
+          "example": "string"
+        },
+        "principalId": {
+          "type": "string",
+          "example": "string"
+        },
+        "type": {
+          "type": "string",
+          "example": "string"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {}
+        },
+        "read": {
+          "type": "boolean",
+          "example": false
+        },
+        "createdAt": {
+          "type": "string",
+          "example": "2025-01-01T12:00:00Z"
+        }
+      }
+    },
+    "Team": {
+      "type": "object",
+      "properties": {
+        "_id": {
+          "type": "string",
+          "example": "string"
+        },
+        "orgId": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "example": "string"
+            },
+            "enum": {
+              "type": "array",
+              "example": [
+                "Fastway",
+                "metalharvest",
+                "greenway"
+              ],
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "name": {
+          "type": "string",
+          "example": "string"
+        },
+        "description": {
+          "type": "string",
+          "example": "string"
+        },
+        "members": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "principalId": {
+                "type": "string",
+                "example": "string"
+              },
+              "email": {
+                "type": "string",
+                "example": "string"
+              }
+            }
+          }
+        },
+        "active": {
+          "type": "boolean",
+          "example": true
+        },
+        "createdAt": {
+          "type": "string",
+          "example": "2025-01-01T12:00:00Z"
+        },
+        "updatedAt": {
+          "type": "string",
+          "example": "2025-01-01T12:00:00Z"
         }
       }
     }

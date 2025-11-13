@@ -1,4 +1,4 @@
-// librerias 
+// librerias
 import express from 'express'
 import morgan from 'morgan'
 import helmet from 'helmet'
@@ -8,8 +8,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import swaggerUi from 'swagger-ui-express'
 
-
-// importar modulos para llamar rutas jeje 
+// importar routers
 import ticketsRouter from './modules/CrearTicket/router.js'
 import areasRouter from './modules/CrearArea/router.js'
 import routes from './modules/index.js'
@@ -20,15 +19,19 @@ import teamsRouter from './modules/teams/router.js'
 import NotificationsRouter from './modules/Notifications/router.js'
 import messagesRouter from './modules/Messages/router.js'
 
+// __dirname para ESM
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
+// cargar swagger_output.json
 let swaggerFile = {}
 try {
   const p = path.join(__dirname, 'swagger_output.json')
   if (fs.existsSync(p)) swaggerFile = JSON.parse(fs.readFileSync(p, 'utf8'))
   else console.warn('⚠️  Falta swagger_output.json. Ejecuta: npm run swagger')
-} catch { console.warn('⚠️  No se pudo cargar swagger_output.json.') }
+} catch {
+  console.warn('⚠️  No se pudo cargar swagger_output.json.')
+}
 
 export function createApp() {
   const app = express()
@@ -38,32 +41,40 @@ export function createApp() {
   app.use(express.json())
   app.use(morgan('dev'))
 
-  // log de diagnóstico
-
-
+  // Documentación Swagger
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerFile))
-  app.use((req, _res, next) => { console.log('➡️', req.method, req.originalUrl); next() })
-  
-  // mensajes
-  app.use('/api/messages', messagesRouter);
 
-  //  Rutas para crear ticket 
-  app.use('/api/tickets', ticketsRouter);
+  // Log de diagnóstico
+  app.use((req, _res, next) => {
+    console.log('➡️', req.method, req.originalUrl)
+    next()
+  })
 
-  //notificaciones
-  app.use('/api/notifications', NotificationsRouter);
+  // ===============================
+  //   ⭐ PREFIJO GLOBAL /tikets ⭐
+  // ===============================
+  const API_PREFIX = '/tikets'
 
-  // Ruta para crear area 
-  app.use('/api/areas', areasRouter);
+  // ===============================
+  //   ⭐ RUTAS CARGADAS EN ARRAY ⭐
+  // ===============================
+  const rutas = [
+    ['messages', messagesRouter],
+    ['tickets', ticketsRouter],
+    ['notifications', NotificationsRouter],
+    ['areas', areasRouter],
+    ['files', filesRouter],
+    ['teams', teamsRouter],
+  ]
 
-  // ruta pra meter files
-  app.use('/api/files', filesRouter);
+  rutas.forEach(([nombre, router]) => {
+    app.use(`${API_PREFIX}/${nombre}`, router)
+  })
 
-  // api para los equipos- crear equipos
-  app.use('/api/teams', teamsRouter);
+  // Rutas agrupadas (index.js)
+  app.use(API_PREFIX, routes)
 
-  app.use('/api', routes);
-
+  // middlewares
   app.use(notFound)
   app.use(errorHandler)
 
