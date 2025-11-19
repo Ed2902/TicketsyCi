@@ -103,5 +103,50 @@ export async function all(req, res, next) {
     next(e);
   }
 }
- 
+
+export async function createFull(req, res, next) {
+  try {
+    const orgId = req.header('x-org-id')
+    const principalId = req.header('x-principal-id')
+
+    if (!orgId || !principalId) {
+      return res.status(400).json({
+        error: 'Faltan headers x-org-id o x-principal-id',
+      })
+    }
+
+    const {
+      title,
+      description,
+      categoryId,
+      priorityId,
+      statusId,
+      assigneeType,
+      assigneeId,
+      firstMessageBody,
+    } = req.body
+
+    const uploadedFiles = req.files || []
+
+    const result = await Service.createTicketPackage({
+      orgId,
+      principalId,
+      ticketData: {
+        title,
+        description,
+        categoryId,
+        priorityId,
+        statusId,
+        assigneeType,
+        assigneeId,
+      },
+      firstMessageBody,
+      uploadedFiles,
+    })
+
+    return res.status(201).json(result)
+  } catch (err) {
+    next(err)
+  }
+}
 

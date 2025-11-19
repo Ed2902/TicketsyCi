@@ -8,8 +8,11 @@ import {
   listAllTicketsSchema,
 } from './validator.js'
 import * as Controller from './controller.js'
+import multer from 'multer'
 
 const router = Router()
+
+const upload = multer  ({ dest: 'uploads/' })
 
 /* 
   ======================================================
@@ -65,6 +68,20 @@ router.post(
   validate(createTicketSchema),
   Controller.create
 )
+
+//*crear ticket complto */
+router.post(
+  '/full',
+  /*
+    #swagger.tags = ['Tickets']
+    #swagger.description = 'Crear un ticket con mensaje, archivos y notificación'
+    #swagger.path = '/tickets/full'
+  */
+  upload.none(),       
+  // validate(createTicketSchema),     
+  Controller.createFull             
+)
+
 
 // Actualizar ticket
 router.patch(

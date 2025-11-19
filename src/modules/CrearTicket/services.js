@@ -114,3 +114,66 @@ export async function all({ orgId }) {
   if (orgId) filter.orgId = orgId;
   return Ticket.find(filter).lean();
 }
+// src/modules/CrearTicket/services.js
+
+export async function createTicketPackage({
+  orgId,
+  principalId,
+  ticketData,
+  firstMessageBody,
+  uploadedFiles = [],
+}) {
+  // 1) Generamos un code si no viene en ticketData
+  const generatedCode =
+    ticketData.code || `TCK-${orgId}-${Date.now()}` // puedes cambiar el formato si quieres
+
+  // 2) Crear el ticket directamente con el modelo Ticket
+  const ticketDoc = await Ticket.create({
+    code: generatedCode,               // 👈👈👈 AQUÍ EL CAMBIO CLAVE
+    orgId,
+    title: ticketData.title,
+    description: ticketData.description,
+    categoryId: ticketData.categoryId,
+    priorityId: ticketData.priorityId,
+    statusId: ticketData.statusId,
+
+    reporter: {
+      id: principalId,
+    },
+    assignee: {
+      id: ticketData.assigneeId,
+      type: ticketData.assigneeType,
+    },
+  })
+
+  const ticket =
+    typeof ticketDoc.toObject === 'function' ? ticketDoc.toObject() : ticketDoc
+
+  // 3) Mensaje inicial (todavía simulado)
+  const message = firstMessageBody
+    ? {
+        body: firstMessageBody,
+        senderId: principalId,
+        ticketId: ticket._id,
+      }
+    : null
+
+  // 4) Archivos (simulados de momento)
+  const files = (uploadedFiles || []).map((f) => ({
+    originalName: f.originalname,
+    mimeType: f.mimetype,
+    size: f.size,
+    ticketId: ticket._id,
+  }))
+
+  // 5) Notificación (simulada)
+  const notification = ticketData.assigneeId
+    ? {
+        to: ticketData.assigneeId,
+        text: `Tienes un nuevo ticket: ${ticket.title}`,
+        ticketId: ticket._id,
+      }
+    : null
+
+  return { ticket, message, files, notification }
+}
