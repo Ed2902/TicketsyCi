@@ -367,6 +367,67 @@
         }
       }
     },
+    "/tickets/full": {
+      "post": {
+        "tags": [
+          "Tickets"
+        ],
+        "description": "Crear un ticket con mensaje, archivos y notificación",
+        "parameters": [
+          {
+            "name": "x-org-id",
+            "in": "header",
+            "type": "string"
+          },
+          {
+            "name": "x-principal-id",
+            "in": "header",
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "example": "any"
+                },
+                "description": {
+                  "example": "any"
+                },
+                "categoryId": {
+                  "example": "any"
+                },
+                "priorityId": {
+                  "example": "any"
+                },
+                "statusId": {
+                  "example": "any"
+                },
+                "assigneeType": {
+                  "example": "any"
+                },
+                "assigneeId": {
+                  "example": "any"
+                },
+                "firstMessageBody": {
+                  "example": "any"
+                }
+              }
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Bad Request"
+          }
+        }
+      }
+    },
     "/tickets/health/ping": {
       "get": {
         "tags": [
