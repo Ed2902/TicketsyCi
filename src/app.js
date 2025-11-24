@@ -1,7 +1,6 @@
 import express from 'express'
 import morgan from 'morgan'
 import helmet from 'helmet'
-import cors from 'cors'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -19,6 +18,10 @@ import messagesRouter from './modules/Messages/router.js'
 
 // importar middleware de autenticación
 import { authMiddleware } from './config/jwt.js'
+
+// importar limitador de peticiones y opciones de CORS
+import { apiLimiter } from './config/rateLimit.js'
+import { buildCors } from './config/corsOptions.js'
 
 // __dirname para ESM
 const __filename = fileURLToPath(import.meta.url)
@@ -40,7 +43,8 @@ try {
 export function createApp() {
   const app = express()
 
-  app.use(cors())
+  // Usa la versión personalizada de CORS según CORS_ORIGIN
+  app.use(buildCors())
   app.use(helmet())
   app.use(express.json())
   app.use(morgan('dev'))
@@ -59,8 +63,8 @@ export function createApp() {
   // ===============================
   const API_PREFIX = '/tikets'
 
-  // Proteger todas las rutas bajo el prefijo /tikets
-  app.use(API_PREFIX, authMiddleware)
+  // Proteger todas las rutas bajo el prefijo /tikets con autenticación y rate‑limit
+  app.use(API_PREFIX, authMiddleware, apiLimiter)
 
   // ===============================
   //   ⭐ RUTAS CARGADAS EN ARRAY ⭐

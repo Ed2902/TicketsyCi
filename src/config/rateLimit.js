@@ -1,4 +1,5 @@
-const rateLimit = require('express-rate-limit')
+// src/config/rateLimit.js
+import rateLimit from 'express-rate-limit'
 
 function parseWindow(v = '15m') {
   const m = /^(\d+)(ms|s|m|h)$/.exec(v)
@@ -8,12 +9,11 @@ function parseWindow(v = '15m') {
 }
 
 const { ms } = parseWindow(process.env.RATE_LIMIT_WINDOW)
-const apiLimiter = rateLimit({
+
+export const apiLimiter = rateLimit({
   windowMs: ms,
   max: Number(process.env.RATE_LIMIT_MAX || 100),
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, try again later.' },
 })
-
-module.exports = { apiLimiter }

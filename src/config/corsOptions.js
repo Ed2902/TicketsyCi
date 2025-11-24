@@ -1,11 +1,14 @@
-const cors = require('cors')
+// src/config/corsOptions.js
+import cors from 'cors'
 
-function buildCors() {
-  const origins = (process.env.CORS_ORIGIN || '')
-    .split(',')
+export function buildCors() {
+  const origins = process.env.CORS_ORIGIN.split(',')
     .map(s => s.trim())
     .filter(Boolean)
-  if (!origins.length) return cors() // abierto en dev
+
+  // si no hay orígenes configurados → abierto (dev)
+  if (!origins.length) return cors()
+
   return cors({
     origin: (origin, cb) =>
       !origin || origins.includes(origin)
@@ -14,5 +17,3 @@ function buildCors() {
     credentials: true,
   })
 }
-
-module.exports = { buildCors }
