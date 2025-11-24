@@ -1,4 +1,3 @@
-// librerias
 import express from 'express'
 import morgan from 'morgan'
 import helmet from 'helmet'
@@ -8,7 +7,6 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import swaggerUi from 'swagger-ui-express'
 
-// importar routers
 import ticketsRouter from './modules/CrearTicket/router.js'
 import areasRouter from './modules/CrearArea/router.js'
 import routes from './modules/index.js'
@@ -19,6 +17,9 @@ import teamsRouter from './modules/teams/router.js'
 import NotificationsRouter from './modules/Notifications/router.js'
 import messagesRouter from './modules/Messages/router.js'
 
+// importar middleware de autenticación
+import { authMiddleware } from './config/jwt.js'
+
 // __dirname para ESM
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -27,8 +28,11 @@ const __dirname = path.dirname(__filename)
 let swaggerFile = {}
 try {
   const p = path.join(__dirname, 'swagger_output.json')
-  if (fs.existsSync(p)) swaggerFile = JSON.parse(fs.readFileSync(p, 'utf8'))
-  else console.warn('⚠️  Falta swagger_output.json. Ejecuta: npm run swagger')
+  if (fs.existsSync(p)) {
+    swaggerFile = JSON.parse(fs.readFileSync(p, 'utf8'))
+  } else {
+    console.warn('⚠️  Falta swagger_output.json. Ejecuta: npm run swagger')
+  }
 } catch {
   console.warn('⚠️  No se pudo cargar swagger_output.json.')
 }
@@ -41,7 +45,7 @@ export function createApp() {
   app.use(express.json())
   app.use(morgan('dev'))
 
-  // Documentación Swagger
+  // Documentación Swagger (fuera del prefijo protegido)
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerFile))
 
   // Log de diagnóstico
@@ -54,6 +58,9 @@ export function createApp() {
   //   ⭐ PREFIJO GLOBAL /tikets ⭐
   // ===============================
   const API_PREFIX = '/tikets'
+
+  // Proteger todas las rutas bajo el prefijo /tikets
+  app.use(API_PREFIX, authMiddleware)
 
   // ===============================
   //   ⭐ RUTAS CARGADAS EN ARRAY ⭐
@@ -74,7 +81,7 @@ export function createApp() {
   // Rutas agrupadas (index.js)
   app.use(API_PREFIX, routes)
 
-  // middlewares
+  // middlewares de error
   app.use(notFound)
   app.use(errorHandler)
 

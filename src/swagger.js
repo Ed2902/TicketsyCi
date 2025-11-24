@@ -1,4 +1,3 @@
-// swagger.js
 import swaggerAutogen from 'swagger-autogen'
 
 const doc = {
@@ -14,6 +13,24 @@ const doc = {
   schemes: ['http'],
   consumes: ['application/json'],
   produces: ['application/json'],
+
+  // ======================================================
+  // ⭐ ESQUEMA DE SEGURIDAD PARA JWT
+  // ======================================================
+  securityDefinitions: {
+    bearerAuth: {
+      type: 'apiKey',
+      name: 'Authorization',
+      in: 'header',
+      description: 'Introduce un token JWT en formato Bearer <token>',
+    },
+  },
+  // Aplica el esquema a todos los endpoints
+  security: [
+    {
+      bearerAuth: [],
+    },
+  ],
 
   // ======================================================
   // ⭐ DEFINICIONES COMPLETAS (MODELOS Swagger)
