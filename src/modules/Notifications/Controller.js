@@ -1,5 +1,5 @@
 import * as Service from './Service.js';
-
+import { sendPushToPrincipal } from '../Notifications/pushService.js';
 export async function list(req, res, next) {
   try {
     const q = req.validated?.query ?? {};
@@ -47,6 +47,7 @@ export async function detail(req, res, next) {
 export async function create(req, res, next) {
   try {
     const b = req.validated.body;
+
     const doc = await Service.create({
       orgId: b.orgId,
       principalId: b.principalId,
@@ -54,10 +55,36 @@ export async function create(req, res, next) {
       payload: b.payload,
       read: b.read
     });
-    res.status(201).json(doc);
-  } catch (e) { next(e); }
-}
 
+    // 👇 Intentamos enviar la push, pero si falla no rompemos la API
+    try {
+      // Aquí definimos cómo se construye el título/cuerpo de la notificación push
+      const title =
+        b.payload?.title ||
+        `Nueva notificación: ${b.type || "evento"}`;
+
+      const body =
+        b.payload?.message ||
+        b.payload?.body ||
+        JSON.stringify(b.payload ?? {});
+
+      const url =
+        b.payload?.url || "/"; // por ejemplo, luego será /tickets/:id
+
+      await sendPushToPrincipal(b.principalId, {
+        title,
+        body,
+        url
+      });
+    } catch (errPush) {
+      console.error("⚠️ Error enviando push, pero la notificación se guardó:", errPush);
+    }
+
+    res.status(201).json(doc);
+  } catch (e) {
+    next(e);
+  }
+}
 export async function markRead(req, res, next) {
   try {
     const orgId = req.headers['x-org-id'] ?? undefined;
