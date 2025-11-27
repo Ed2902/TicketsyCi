@@ -2,7 +2,89 @@ import mongoose from 'mongoose';
 import { Ticket } from './model.js';
 import { Counter } from '../_shared/Counter.js';
 
-const pad = (n, width=4) => String(n).padStart(width, '0');
+const pad = (n, width = 4) => String(n).padStart(width, '0');
+
+/* ============================================================
+   🔹 HELPERS PARA COLECCIONES DE METADATOS
+   ============================================================ */
+function categoriesCol() {
+  return mongoose.connection.collection('ticket_categories');
+}
+
+function prioritiesCol() {
+  return mongoose.connection.collection('ticket_priorities');
+}
+
+function statusesCol() {
+  return mongoose.connection.collection('ticket_statuses');
+}
+
+// 👇 Ajusta el nombre de la colección si tu colección de usuarios se llama distinto
+function usersCol() {
+  return mongoose.connection.collection('users');
+}
+
+/* ============================================================
+   🔹 FUNCIONES PARA META DE TICKETS
+   Usadas por:
+   - GET /tikets/tickets/categories
+   - GET /tikets/tickets/priorities
+   - GET /tikets/tickets/statuses
+   - GET /tikets/tickets/users
+   ============================================================ */
+
+export async function listCategories({ orgId }) {
+  const filter = {};
+  if (orgId) filter.orgId = orgId;
+
+  const docs = await categoriesCol()
+    .find({})
+    .sort({ name: 1 })
+    .toArray();
+
+  // devolvemos tal cual; si quieres normalizar, aquí es el lugar
+  return docs;
+}
+
+export async function listPriorities({ orgId }) {
+  const filter = {};
+  if (orgId) filter.orgId = orgId;
+
+  const docs = await prioritiesCol()
+    .find({})
+    .sort({ name: 1 })
+    .toArray();
+
+  return docs;
+}
+
+export async function listStatuses({ orgId }) {
+  const filter = {};
+  if (orgId) filter.orgId = orgId;
+
+  const docs = await statusesCol()
+    .find({})
+    .sort({ name: 1 })
+    .toArray();
+
+  return docs;
+}
+
+export async function listUsers({ orgId }) {
+  const filter = {};
+  if (orgId) filter.orgId = orgId;
+
+  const docs = await usersCol()
+    .find({})
+    .sort({ name: 1 })
+    .toArray();
+
+  return docs;
+}
+
+/* ============================================================
+   🔹 LO QUE YA TENÍAS: LIST, DETAIL, CREATE, UPDATE, REMOVE...
+   ============================================================ */
 
 async function nextTicketCode(orgId) {
   const doc = await Counter.findOneAndUpdate(
@@ -13,22 +95,36 @@ async function nextTicketCode(orgId) {
   return `TCK-${pad(doc.seq)}`;
 }
 
-export async function list({ orgId, q, statusId, priorityId, categoryId, limit = 50, page = 1 }) {
+export async function list({
+  orgId,
+  q,
+  statusId,
+  priorityId,
+  categoryId,
+  limit = 50,
+  page = 1,
+}) {
   const filter = {};
-  if (orgId)      filter.orgId = orgId;
-  if (statusId)   filter.statusId = statusId;
+  if (orgId) filter.orgId = orgId;
+  if (statusId) filter.statusId = statusId;
   if (priorityId) filter.priorityId = priorityId;
   if (categoryId) filter.categoryId = categoryId;
-  if (q)          filter.$text = { $search: q };
+  if (q) filter.$text = { $search: q };
 
   const skip = (page - 1) * limit;
 
   const [rows, total] = await Promise.all([
     Ticket.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
-    Ticket.countDocuments(filter)
+    Ticket.countDocuments(filter),
   ]);
 
-  return { rows, total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) };
+  return {
+    rows,
+    total,
+    page,
+    limit,
+    pages: Math.max(1, Math.ceil(total / limit)),
+  };
 }
 
 export function detail({ orgId, id }) {
@@ -41,17 +137,32 @@ export function detail({ orgId, id }) {
 export async function create({ orgId, principal, payload }) {
   // Campos obligatorios según tu formato
   const {
-    title, description,
-    categoryId, priorityId, statusId,
+    title,
+    description,
+    categoryId,
+    priorityId,
+    statusId,
     // objetos:
-    reporter, assignee,
+    reporter,
+    assignee,
     // opcionales:
-    watchers = [], attachmentsCount = 0, tags = [],
-    custom = {}, dueAt = null
+    watchers = [],
+    attachmentsCount = 0,
+    tags = [],
+    custom = {},
+    dueAt = null,
   } = payload;
 
   // Validaciones mínimas (además del validador Zod)
-  const must = { title, description, categoryId, priorityId, statusId, reporter, assignee };
+  const must = {
+    title,
+    description,
+    categoryId,
+    priorityId,
+    statusId,
+    reporter,
+    assignee,
+  };
   for (const [k, v] of Object.entries(must)) {
     if (v === undefined || v === null || v === '') {
       const e = new Error(`Campo requerido faltante: ${k}`);
@@ -66,7 +177,7 @@ export async function create({ orgId, principal, payload }) {
   const doc = await Ticket.create({
     orgId,
     code,
-    
+
     title,
     description,
     categoryId,
@@ -78,7 +189,7 @@ export async function create({ orgId, principal, payload }) {
     attachmentsCount,
     tags,
     custom,
-    dueAt
+    dueAt,
   });
 
   return doc;
@@ -99,7 +210,7 @@ export function update({ orgId, id, payload }) {
   );
 }
 
-// para eliminar 
+// para eliminar
 export async function remove({ orgId, id }) {
   if (!mongoose.isValidObjectId(id)) return false;
   const filter = { _id: id };
@@ -108,14 +219,13 @@ export async function remove({ orgId, id }) {
   return r.acknowledged && r.deletedCount === 1;
 }
 
-
 export async function all({ orgId }) {
   const filter = {};
   if (orgId) filter.orgId = orgId;
   return Ticket.find(filter).lean();
 }
-// src/modules/CrearTicket/services.js
 
+// src/modules/CrearTicket/services.js
 export async function createTicketPackage({
   orgId,
   principalId,
@@ -125,11 +235,11 @@ export async function createTicketPackage({
 }) {
   // 1) Generamos un code si no viene en ticketData
   const generatedCode =
-    ticketData.code || `TCK-${orgId}-${Date.now()}` // puedes cambiar el formato si quieres
+    ticketData.code || `TCK-${orgId}-${Date.now()}`; // puedes cambiar el formato si quieres
 
   // 2) Crear el ticket directamente con el modelo Ticket
   const ticketDoc = await Ticket.create({
-    code: generatedCode,               // 👈👈👈 AQUÍ EL CAMBIO CLAVE
+    code: generatedCode, // 👈 aquí usamos siempre un code
     orgId,
     title: ticketData.title,
     description: ticketData.description,
@@ -144,10 +254,10 @@ export async function createTicketPackage({
       id: ticketData.assigneeId,
       type: ticketData.assigneeType,
     },
-  })
+  });
 
   const ticket =
-    typeof ticketDoc.toObject === 'function' ? ticketDoc.toObject() : ticketDoc
+    typeof ticketDoc.toObject === 'function' ? ticketDoc.toObject() : ticketDoc;
 
   // 3) Mensaje inicial (todavía simulado)
   const message = firstMessageBody
@@ -156,7 +266,7 @@ export async function createTicketPackage({
         senderId: principalId,
         ticketId: ticket._id,
       }
-    : null
+    : null;
 
   // 4) Archivos (simulados de momento)
   const files = (uploadedFiles || []).map((f) => ({
@@ -164,7 +274,7 @@ export async function createTicketPackage({
     mimeType: f.mimetype,
     size: f.size,
     ticketId: ticket._id,
-  }))
+  }));
 
   // 5) Notificación (simulada)
   const notification = ticketData.assigneeId
@@ -173,7 +283,7 @@ export async function createTicketPackage({
         text: `Tienes un nuevo ticket: ${ticket.title}`,
         ticketId: ticket._id,
       }
-    : null
+    : null;
 
-  return { ticket, message, files, notification }
+  return { ticket, message, files, notification };
 }

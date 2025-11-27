@@ -12,7 +12,7 @@ import multer from 'multer'
 
 const router = Router()
 
-const upload = multer  ({ dest: 'uploads/' })
+const upload = multer({ dest: 'uploads/' })
 
 /* 
   ======================================================
@@ -20,6 +20,49 @@ const upload = multer  ({ dest: 'uploads/' })
     ⇒ Los paths Swagger deben comenzar con /tickets/...
   ======================================================
 */
+
+// 🔹 META DE TICKETS (CATEGORÍAS, PRIORIDADES, ESTADOS, USUARIOS)
+//    IMPORTANTE: van ANTES de '/:id' para que no lo capture
+
+router.get(
+  '/categories',
+  /*
+    #swagger.tags = ['Tickets - Meta']
+    #swagger.description = 'Lista de categorías de tickets'
+    #swagger.path = '/tickets/categories'
+  */
+  Controller.listCategories // ⭐ NUEVO
+)
+
+router.get(
+  '/priorities',
+  /*
+    #swagger.tags = ['Tickets - Meta']
+    #swagger.description = 'Lista de prioridades de tickets'
+    #swagger.path = '/tickets/priorities'
+  */
+  Controller.listPriorities // ⭐ NUEVO
+)
+
+router.get(
+  '/statuses',
+  /*
+    #swagger.tags = ['Tickets - Meta']
+    #swagger.description = 'Lista de estados de tickets'
+    #swagger.path = '/tickets/statuses'
+  */
+  Controller.listStatuses // ⭐ NUEVO
+)
+
+router.get(
+  '/users',
+  /*
+    #swagger.tags = ['Tickets - Meta']
+    #swagger.description = 'Lista de posibles asignatarios de tickets'
+    #swagger.path = '/tickets/users'
+  */
+  Controller.listUsers // ⭐ NUEVO
+)
 
 // Listar tickets (con filtros)
 router.get(
@@ -69,7 +112,7 @@ router.post(
   Controller.create
 )
 
-//*crear ticket complto */
+// Crear ticket completo
 router.post(
   '/full',
   /*
@@ -77,11 +120,10 @@ router.post(
     #swagger.description = 'Crear un ticket con mensaje, archivos y notificación'
     #swagger.path = '/tickets/full'
   */
-  upload.none(),       
-  // validate(createTicketSchema),     
-  Controller.createFull             
+  upload.none(),
+  // validate(createTicketSchema),
+  Controller.createFull
 )
-
 
 // Actualizar ticket
 router.patch(

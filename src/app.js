@@ -50,7 +50,19 @@ try {
 export function createApp() {
   const app = express()
 
-  app.use(cors())
+app.use(
+  cors({
+    origin: 'http://localhost:5173', // tu frontend
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'x-org-id',
+      'x-principal-id',
+    ],
+  })
+)
   app.use(helmet())
   app.use(express.json())
   app.use(morgan('dev'))
