@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { Ticket } from './model.js';
 import { Counter } from '../_shared/Counter.js';
 
-const pad = (n, width = 4) => String(n).padStart(width, '0');
+
 
 /* ============================================================
    🔹 HELPERS PARA COLECCIONES DE METADATOS
@@ -23,6 +23,10 @@ function statusesCol() {
 function usersCol() {
   return mongoose.connection.collection('users');
 }
+function ticketMessagesCol() {
+  return mongoose.connection.collection('ticketMessages');
+}
+
 
 /* ============================================================
    🔹 FUNCIONES PARA META DE TICKETS
@@ -86,14 +90,16 @@ export async function listUsers({ orgId }) {
    🔹 LO QUE YA TENÍAS: LIST, DETAIL, CREATE, UPDATE, REMOVE...
    ============================================================ */
 
-async function nextTicketCode(orgId) {
+async function nextTicketNumber(orgId) {
   const doc = await Counter.findOneAndUpdate(
     { orgId, name: 'ticket' },
     { $inc: { seq: 1 } },
     { new: true, upsert: true }
   );
-  return `TCK-${pad(doc.seq)}`;
+
+  return doc.seq; 
 }
+
 
 export async function list({
   orgId,
@@ -135,17 +141,14 @@ export function detail({ orgId, id }) {
 }
 
 export async function create({ orgId, principal, payload }) {
-  // Campos obligatorios según tu formato
   const {
     title,
     description,
     categoryId,
     priorityId,
     statusId,
-    // objetos:
     reporter,
     assignee,
-    // opcionales:
     watchers = [],
     attachmentsCount = 0,
     tags = [],
@@ -153,7 +156,6 @@ export async function create({ orgId, principal, payload }) {
     dueAt = null,
   } = payload;
 
-  // Validaciones mínimas (además del validador Zod)
   const must = {
     title,
     description,
@@ -171,13 +173,12 @@ export async function create({ orgId, principal, payload }) {
     }
   }
 
-  // Generar code único por org
-  const code = await nextTicketCode(orgId);
+  // 🔢 Generar code numérico único por org
+  const code = await nextTicketNumber(orgId);
 
   const doc = await Ticket.create({
     orgId,
-    code,
-
+    code, // 👈 aquí queda 1, 2, 3...
     title,
     description,
     categoryId,
@@ -194,6 +195,7 @@ export async function create({ orgId, principal, payload }) {
 
   return doc;
 }
+
 
 export function update({ orgId, id, payload }) {
   if (!mongoose.isValidObjectId(id)) return null;
@@ -225,7 +227,7 @@ export async function all({ orgId }) {
   return Ticket.find(filter).lean();
 }
 
-// src/modules/CrearTicket/services.js
+
 export async function createTicketPackage({
   orgId,
   principalId,
@@ -233,13 +235,22 @@ export async function createTicketPackage({
   firstMessageBody,
   uploadedFiles = [],
 }) {
-  // 1) Generamos un code si no viene en ticketData
-  const generatedCode =
-    ticketData.code || `TCK-${orgId}-${Date.now()}`; // puedes cambiar el formato si quieres
+  console.log('🧩 createTicketPackage() llamado con:', {
+    orgId,
+    principalId,
+    title: ticketData?.title,
+    description: ticketData?.description,
+    firstMessageBody,
+    uploadedFilesLen: uploadedFiles.length,
+  });
 
-  // 2) Crear el ticket directamente con el modelo Ticket
+ 
+  const generatedCode =
+    ticketData.code ?? await nextTicketNumber(orgId);
+
+
   const ticketDoc = await Ticket.create({
-    code: generatedCode, // 👈 aquí usamos siempre un code
+    code: generatedCode, 
     orgId,
     title: ticketData.title,
     description: ticketData.description,
@@ -259,14 +270,56 @@ export async function createTicketPackage({
   const ticket =
     typeof ticketDoc.toObject === 'function' ? ticketDoc.toObject() : ticketDoc;
 
-  // 3) Mensaje inicial (todavía simulado)
-  const message = firstMessageBody
-    ? {
-        body: firstMessageBody,
-        senderId: principalId,
-        ticketId: ticket._id,
-      }
-    : null;
+  console.log('🎫 Ticket creado:', {
+    _id: ticket._id,
+    code: ticket.code,
+    title: ticket.title,
+  });
+
+  // 3) Mensaje inicial: usar firstMessageBody O description
+  const rawMessage =
+    (firstMessageBody ?? ticketData.description ?? '').trim();
+
+  console.log('💬 rawMessage calculado:', rawMessage);
+
+  let message = null;
+
+  if (rawMessage) {
+    const now = new Date();
+
+    console.log('💾 Insertando mensaje en ticketMessages para ticket:', ticket._id);
+
+    const insertResult = await ticketMessagesCol().insertOne({
+      orgId,
+      ticketId: ticket._id, // 🔗 relación con el ticket
+      sender: {
+        id: principalId,
+        type: 'requester', // o como tú lo manejes
+      },
+      message: rawMessage,
+      attachments: [],
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    console.log('✅ Mensaje insertado con _id:', insertResult.insertedId);
+
+    message = {
+      _id: insertResult.insertedId,
+      orgId,
+      ticketId: ticket._id,
+      sender: {
+        id: principalId,
+        type: 'requester',
+      },
+      message: rawMessage,
+      attachments: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+  } else {
+    console.log('⚠️ No se creó mensaje porque rawMessage está vacío');
+  }
 
   // 4) Archivos (simulados de momento)
   const files = (uploadedFiles || []).map((f) => ({
