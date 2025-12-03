@@ -1,12 +1,13 @@
+// src/app.js
 import express from 'express'
 import morgan from 'morgan'
 import helmet from 'helmet'
-import cors from 'cors'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import swaggerUi from 'swagger-ui-express'
-import webpush from "web-push"
+import webpush from 'web-push'
+
 import ticketsRouter from './modules/CrearTicket/router.js'
 import areasRouter from './modules/CrearArea/router.js'
 import routes from './modules/index.js'
@@ -21,18 +22,21 @@ import pushRouter from './alertas/push.routes.js'
 // importar middleware de autenticación
 import { authMiddleware } from './config/jwt.js'
 
+// importar tu helper de CORS
+import { buildCors } from './config/corsOptions.js'
+
 // __dirname para ESM
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-
-// Configuración inidial de notificaciones, esto es el web-push edwin 
-
+// ===============================
+//   Configuración Web Push
+// ===============================
 webpush.setVapidDetails(
-  "mailto:soporte@tusistema.com",
+  'mailto:tech@fastwaysas.com',
   process.env.VAPID_PUBLIC_KEY,
   process.env.VAPID_PRIVATE_KEY
-);
+)
 
 // cargar swagger_output.json
 let swaggerFile = {}
@@ -50,19 +54,11 @@ try {
 export function createApp() {
   const app = express()
 
-app.use(
-  cors({
-    origin: 'http://localhost:5173', // tu frontend
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'x-org-id',
-      'x-principal-id',
-    ],
-  })
-)
+  // ===============================
+  //   CORS usando tu helper
+  // ===============================
+  app.use(buildCors())
+
   app.use(helmet())
   app.use(express.json())
   app.use(morgan('dev'))
@@ -94,7 +90,7 @@ app.use(
     ['areas', areasRouter],
     ['files', filesRouter],
     ['teams', teamsRouter],
-    ['push', pushRouter]
+    ['push', pushRouter],
   ]
 
   rutas.forEach(([nombre, router]) => {
