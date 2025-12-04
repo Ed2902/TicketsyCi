@@ -223,21 +223,24 @@ export async function all(req, res, next) {
    Endpoint: POST /tikets/tickets/full
    ============================================================ */
 
+// controller CrearTicket - BACKEND
 export async function createFull(req, res, next) {
   try {
     const body = req.body || {}
 
+    // 👉 Validar ORG
     const org = resolveOrgId(req)
-    if (org.error)
+    if (org.error) {
       return res.status(400).json({ error: true, message: org.error })
+    }
 
+    // 👉 Validar principalId
     const principalR = resolvePrincipal(req, body)
-    if (principalR.error)
-      return res
-        .status(400)
-        .json({ error: true, message: principalR.error })
+    if (principalR.error) {
+      return res.status(400).json({ error: true, message: principalR.error })
+    }
 
-    const {
+    let {
       title,
       description,
       categoryId,
@@ -245,8 +248,41 @@ export async function createFull(req, res, next) {
       statusId,
       assigneeType,
       assigneeId,
+      assigneeGroup, // opcional, para grupos
       firstMessageBody,
     } = body
+
+    // =========================
+    //  🔧 Normalización asignación
+    // =========================
+
+    const isGroup = assigneeType === 'group'
+    assigneeType = isGroup ? 'group' : 'person'
+
+    let normalizedGroup = []
+
+    if (isGroup) {
+      if (Array.isArray(assigneeGroup)) {
+        normalizedGroup = Array.from(
+          new Set(
+            assigneeGroup
+              .map((v) => String(v).trim())
+              .filter((v) => v.length > 0)
+          )
+        )
+      }
+
+      if (normalizedGroup.length === 0) {
+        return res.status(400).json({
+          error: true,
+          message:
+            'Debe enviar al menos un integrante en assigneeGroup cuando assigneeType es "group".',
+        })
+      }
+
+      // En modo grupo, dejamos que el id sea null en el modelo (no es requerido)
+      // NO lo tocamos aquí, lo maneja el service según type.
+    }
 
     const uploadedFiles = req.files || []
 
@@ -259,8 +295,9 @@ export async function createFull(req, res, next) {
         categoryId,
         priorityId,
         statusId,
-        assigneeType,
-        assigneeId,
+        assigneeType,                           // 'person' | 'group'
+        assigneeId,                             // id de usuario si es persona
+        assigneeGroup: isGroup ? normalizedGroup : [], // array de ids si es grupo
       },
       firstMessageBody,
       uploadedFiles,

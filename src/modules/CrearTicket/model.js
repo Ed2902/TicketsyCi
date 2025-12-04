@@ -13,11 +13,32 @@ const PersonRefSchema = new Schema({
   email:{ type: String }
 }, { _id: false });
 
-const AssigneeSchema = new Schema({
-  type: { type: String, enum: ['person','team'], required: true },
-  id:   { type: String, required: true },
-  name: { type: String }
-}, { _id: false });
+const AssigneeSchema = new Schema(
+  {
+    type: {
+      type: String,
+      enum: ['person', 'team', 'group'], // 👈 ahora también permite 'group'
+      required: true,
+    },
+    // id:
+    //  - requerido para 'person' y 'team'
+    //  - NO requerido para 'group'
+    id: {
+      type: String,
+      required: function () {
+        return this.type === 'person' || this.type === 'team'
+      },
+    },
+    name: { type: String },
+
+    // 👇 nuevo: cuando es grupo, aquí van las personas
+    members: {
+      type: [PersonRefSchema], // reutilizas { id, name, email }
+      default: [],
+    },
+  },
+  { _id: false }
+)
 
 const TicketSchema = new Schema({
   // 🔒 orgId restringido por enum

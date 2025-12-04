@@ -1,93 +1,75 @@
-import mongoose from 'mongoose';
-import { Ticket } from './model.js';
-import { Counter } from '../_shared/Counter.js';
-
-
+import mongoose from 'mongoose'
+import { Ticket } from './model.js'
+import { Counter } from '../_shared/Counter.js'
 
 /* ============================================================
-   🔹 HELPERS PARA COLECCIONES DE METADATOS
+   🔹 HELPERS PARA COLECCIONES
    ============================================================ */
 function categoriesCol() {
-  return mongoose.connection.collection('ticket_categories');
+  return mongoose.connection.collection('ticket_categories')
 }
 
 function prioritiesCol() {
-  return mongoose.connection.collection('ticket_priorities');
+  return mongoose.connection.collection('ticket_priorities')
 }
 
 function statusesCol() {
-  return mongoose.connection.collection('ticket_statuses');
+  return mongoose.connection.collection('ticket_statuses')
 }
 
 // 👇 Ajusta el nombre de la colección si tu colección de usuarios se llama distinto
 function usersCol() {
-  return mongoose.connection.collection('users');
-}
-function ticketMessagesCol() {
-  return mongoose.connection.collection('ticketMessages');
+  return mongoose.connection.collection('users')
 }
 
+function ticketMessagesCol() {
+  return mongoose.connection.collection('ticketMessages')
+}
+
+// 👇 NUEVO: colección de notificaciones
+function ticketNotificationsCol() {
+  // cambia 'notifications' si tu colección se llama distinto
+  return mongoose.connection.collection('notifications')
+}
 
 /* ============================================================
    🔹 FUNCIONES PARA META DE TICKETS
-   Usadas por:
-   - GET /tikets/tickets/categories
-   - GET /tikets/tickets/priorities
-   - GET /tikets/tickets/statuses
-   - GET /tikets/tickets/users
    ============================================================ */
 
 export async function listCategories({ orgId }) {
-  const filter = {};
-  if (orgId) filter.orgId = orgId;
+  const filter = {}
+  if (orgId) filter.orgId = orgId
 
-  const docs = await categoriesCol()
-    .find({})
-    .sort({ name: 1 })
-    .toArray();
-
-  // devolvemos tal cual; si quieres normalizar, aquí es el lugar
-  return docs;
+  const docs = await categoriesCol().find(filter).sort({ name: 1 }).toArray()
+  return docs
 }
 
 export async function listPriorities({ orgId }) {
-  const filter = {};
-  if (orgId) filter.orgId = orgId;
+  const filter = {}
+  if (orgId) filter.orgId = orgId
 
-  const docs = await prioritiesCol()
-    .find({})
-    .sort({ name: 1 })
-    .toArray();
-
-  return docs;
+  const docs = await prioritiesCol().find(filter).sort({ name: 1 }).toArray()
+  return docs
 }
 
 export async function listStatuses({ orgId }) {
-  const filter = {};
-  if (orgId) filter.orgId = orgId;
+  const filter = {}
+  if (orgId) filter.orgId = orgId
 
-  const docs = await statusesCol()
-    .find({})
-    .sort({ name: 1 })
-    .toArray();
-
-  return docs;
+  const docs = await statusesCol().find(filter).sort({ name: 1 }).toArray()
+  return docs
 }
 
 export async function listUsers({ orgId }) {
-  const filter = {};
-  if (orgId) filter.orgId = orgId;
+  const filter = {}
+  if (orgId) filter.orgId = orgId
 
-  const docs = await usersCol()
-    .find({})
-    .sort({ name: 1 })
-    .toArray();
-
-  return docs;
+  const docs = await usersCol().find(filter).sort({ name: 1 }).toArray()
+  return docs
 }
 
 /* ============================================================
-   🔹 LO QUE YA TENÍAS: LIST, DETAIL, CREATE, UPDATE, REMOVE...
+   🔹 LIST, DETAIL, CREATE, UPDATE, REMOVE, ALL
    ============================================================ */
 
 async function nextTicketNumber(orgId) {
@@ -95,11 +77,10 @@ async function nextTicketNumber(orgId) {
     { orgId, name: 'ticket' },
     { $inc: { seq: 1 } },
     { new: true, upsert: true }
-  );
+  )
 
-  return doc.seq; 
+  return doc.seq
 }
-
 
 export async function list({
   orgId,
@@ -110,19 +91,19 @@ export async function list({
   limit = 50,
   page = 1,
 }) {
-  const filter = {};
-  if (orgId) filter.orgId = orgId;
-  if (statusId) filter.statusId = statusId;
-  if (priorityId) filter.priorityId = priorityId;
-  if (categoryId) filter.categoryId = categoryId;
-  if (q) filter.$text = { $search: q };
+  const filter = {}
+  if (orgId) filter.orgId = orgId
+  if (statusId) filter.statusId = statusId
+  if (priorityId) filter.priorityId = priorityId
+  if (categoryId) filter.categoryId = categoryId
+  if (q) filter.$text = { $search: q }
 
-  const skip = (page - 1) * limit;
+  const skip = (page - 1) * limit
 
   const [rows, total] = await Promise.all([
     Ticket.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
     Ticket.countDocuments(filter),
-  ]);
+  ])
 
   return {
     rows,
@@ -130,14 +111,14 @@ export async function list({
     page,
     limit,
     pages: Math.max(1, Math.ceil(total / limit)),
-  };
+  }
 }
 
 export function detail({ orgId, id }) {
-  if (!mongoose.isValidObjectId(id)) return null;
-  const filter = { _id: id };
-  if (orgId) filter.orgId = orgId;
-  return Ticket.findOne(filter);
+  if (!mongoose.isValidObjectId(id)) return null
+  const filter = { _id: id }
+  if (orgId) filter.orgId = orgId
+  return Ticket.findOne(filter)
 }
 
 export async function create({ orgId, principal, payload }) {
@@ -154,7 +135,7 @@ export async function create({ orgId, principal, payload }) {
     tags = [],
     custom = {},
     dueAt = null,
-  } = payload;
+  } = payload
 
   const must = {
     title,
@@ -164,17 +145,17 @@ export async function create({ orgId, principal, payload }) {
     statusId,
     reporter,
     assignee,
-  };
+  }
   for (const [k, v] of Object.entries(must)) {
     if (v === undefined || v === null || v === '') {
-      const e = new Error(`Campo requerido faltante: ${k}`);
-      e.status = 400;
-      throw e;
+      const e = new Error(`Campo requerido faltante: ${k}`)
+      e.status = 400
+      throw e
     }
   }
 
   // 🔢 Generar code numérico único por org
-  const code = await nextTicketNumber(orgId);
+  const code = await nextTicketNumber(orgId)
 
   const doc = await Ticket.create({
     orgId,
@@ -191,42 +172,43 @@ export async function create({ orgId, principal, payload }) {
     tags,
     custom,
     dueAt,
-  });
+  })
 
-  return doc;
+  return doc
 }
 
-
 export function update({ orgId, id, payload }) {
-  if (!mongoose.isValidObjectId(id)) return null;
-  const filter = { _id: id };
-  if (orgId) filter.orgId = orgId;
+  if (!mongoose.isValidObjectId(id)) return null
+  const filter = { _id: id }
+  if (orgId) filter.orgId = orgId
 
   // No permitimos cambiar orgId o code desde update
-  const { orgId: _o, code: _c, ...rest } = payload || {};
+  const { orgId: _o, code: _c, ...rest } = payload || {}
 
   return Ticket.findOneAndUpdate(
     filter,
     { $set: rest, $currentDate: { updatedAt: true } },
     { new: true }
-  );
+  )
 }
 
-// para eliminar
 export async function remove({ orgId, id }) {
-  if (!mongoose.isValidObjectId(id)) return false;
-  const filter = { _id: id };
-  if (orgId) filter.orgId = orgId;
-  const r = await Ticket.deleteOne(filter);
-  return r.acknowledged && r.deletedCount === 1;
+  if (!mongoose.isValidObjectId(id)) return false
+  const filter = { _id: id }
+  if (orgId) filter.orgId = orgId
+  const r = await Ticket.deleteOne(filter)
+  return r.acknowledged && r.deletedCount === 1
 }
 
 export async function all({ orgId }) {
-  const filter = {};
-  if (orgId) filter.orgId = orgId;
-  return Ticket.find(filter).lean();
+  const filter = {}
+  if (orgId) filter.orgId = orgId
+  return Ticket.find(filter).lean()
 }
 
+/* ============================================================
+   🔹 createTicketPackage (full: ticket + mensaje + notificaciones)
+   ============================================================ */
 
 export async function createTicketPackage({
   orgId,
@@ -240,69 +222,126 @@ export async function createTicketPackage({
     principalId,
     title: ticketData?.title,
     description: ticketData?.description,
+    assigneeType: ticketData?.assigneeType,
+    assigneeId: ticketData?.assigneeId,
+    assigneeGroup: ticketData?.assigneeGroup,
     firstMessageBody,
     uploadedFilesLen: uploadedFiles.length,
-  });
+  })
 
- 
-  const generatedCode =
-    ticketData.code ?? await nextTicketNumber(orgId);
+  const {
+    title,
+    description,
+    categoryId,
+    priorityId,
+    statusId,
+    assigneeType,
+    assigneeId,
+    assigneeGroup = [],
+  } = ticketData || {}
 
+  // 👉 Consideramos que es GRUPO si viene un array con al menos 1 id
+  const isGroup =
+    Array.isArray(assigneeGroup) && assigneeGroup.filter(Boolean).length > 0
+
+  // Normalizamos ids del grupo (únicos, strings, sin vacíos)
+  const normalizedGroupIds = isGroup
+    ? Array.from(
+        new Set(
+          assigneeGroup
+            .filter(Boolean)
+            .map((v) => String(v).trim())
+            .filter((v) => v.length > 0)
+        )
+      )
+    : []
+
+  if (isGroup && normalizedGroupIds.length === 0) {
+    throw new Error(
+      'Debe enviar al menos un integrante válido en assigneeGroup para asignar a un grupo.'
+    )
+  }
+
+  let assignee
+
+  if (isGroup) {
+    // 🔹 MODO GRUPO: usamos members, no id
+    assignee = {
+      type: 'group',
+      // id no es requerido en el schema cuando type === 'group'
+      members: normalizedGroupIds.map((id) => ({
+        id, // luego si quieres puedes resolver name/email
+      })),
+    }
+  } else {
+    // 🔹 MODO PERSONA/TEAM: se mantiene casi igual
+    const normalizedType =
+      assigneeType === 'team'
+        ? 'team'
+        : 'person' // por defecto 'person'
+
+    assignee = {
+      type: normalizedType,
+      id: assigneeId || principalId, // 👈 fallback al creador
+      // members queda vacío
+    }
+  }
+
+  const generatedCode = ticketData.code ?? (await nextTicketNumber(orgId))
 
   const ticketDoc = await Ticket.create({
-    code: generatedCode, 
+    code: generatedCode,
     orgId,
-    title: ticketData.title,
-    description: ticketData.description,
-    categoryId: ticketData.categoryId,
-    priorityId: ticketData.priorityId,
-    statusId: ticketData.statusId,
-
+    title,
+    description,
+    categoryId,
+    priorityId,
+    statusId,
     reporter: {
       id: principalId,
     },
-    assignee: {
-      id: ticketData.assigneeId,
-      type: ticketData.assigneeType,
-    },
-  });
+    assignee, // 👈 persona o grupo
+  })
 
   const ticket =
-    typeof ticketDoc.toObject === 'function' ? ticketDoc.toObject() : ticketDoc;
+    typeof ticketDoc.toObject === 'function' ? ticketDoc.toObject() : ticketDoc
 
   console.log('🎫 Ticket creado:', {
     _id: ticket._id,
     code: ticket.code,
     title: ticket.title,
-  });
+    assignee,
+  })
 
-  // 3) Mensaje inicial: usar firstMessageBody O description
-  const rawMessage =
-    (firstMessageBody ?? ticketData.description ?? '').trim();
+  // === Mensaje inicial (opcional) ===
+  const rawMessage = (firstMessageBody ?? ticketData.description ?? '').trim()
 
-  console.log('💬 rawMessage calculado:', rawMessage);
+  console.log('💬 rawMessage calculado:', rawMessage)
 
-  let message = null;
+  let message = null
 
   if (rawMessage) {
-    const now = new Date();
+    const now = new Date()
 
-    console.log('💾 Insertando mensaje en ticketMessages para ticket:', ticket._id);
+    console.log(
+      '💾 Insertando mensaje en ticketMessages para ticket:',
+      ticket._id
+    )
 
     const insertResult = await ticketMessagesCol().insertOne({
       orgId,
-      ticketId: ticket._id, // 🔗 relación con el ticket
+      ticketId: ticket._id,
       sender: {
         id: principalId,
-        type: 'requester', // o como tú lo manejes
+        type: 'requester',
       },
       message: rawMessage,
       attachments: [],
       createdAt: now,
       updatedAt: now,
-    });
+    })
 
-    console.log('✅ Mensaje insertado con _id:', insertResult.insertedId);
+    console.log('✅ Mensaje insertado con _id:', insertResult.insertedId)
 
     message = {
       _id: insertResult.insertedId,
@@ -316,27 +355,77 @@ export async function createTicketPackage({
       attachments: [],
       createdAt: now,
       updatedAt: now,
-    };
+    }
   } else {
-    console.log('⚠️ No se creó mensaje porque rawMessage está vacío');
+    console.log('⚠️ No se creó mensaje porque rawMessage está vacío')
   }
 
-  // 4) Archivos (simulados de momento)
+  // === Archivos (placeholder) ===
   const files = (uploadedFiles || []).map((f) => ({
     originalName: f.originalname,
     mimeType: f.mimetype,
     size: f.size,
     ticketId: ticket._id,
-  }));
+  }))
 
-  // 5) Notificación (simulada)
-  const notification = ticketData.assigneeId
-    ? {
-        to: ticketData.assigneeId,
-        text: `Tienes un nuevo ticket: ${ticket.title}`,
+  /* ============================================================
+     🔔 NOTIFICACIONES (persona / grupo) -> colección notifications
+     ============================================================ */
+
+  const notificationsToInsert = []
+
+  if (isGroup) {
+    // 👥 Notificación para cada miembro del grupo
+    normalizedGroupIds.forEach((id) => {
+      notificationsToInsert.push({
+        orgId,
+        to: id,
+        type: 'ticket_assigned_group',
+        title: 'Nuevo ticket de tu grupo',
+        text: `Se creó un ticket asignado a tu grupo: ${title}`,
         ticketId: ticket._id,
-      }
-    : null;
+        createdAt: new Date(),
+        read: false,
+      })
+    })
+  } else {
+    // 🧍 Notificación para la persona asignada (o el creador si no hay assigneeId)
+    const toId = assigneeId || principalId
+    if (toId) {
+      notificationsToInsert.push({
+        orgId,
+        to: String(toId),
+        type: 'ticket_assigned',
+        title: 'Nuevo ticket asignado',
+        text: `Tienes un nuevo ticket: ${title}`,
+        ticketId: ticket._id,
+        createdAt: new Date(),
+        read: false,
+      })
+    }
+  }
 
-  return { ticket, message, files, notification };
+  let notifications = []
+
+  if (notificationsToInsert.length > 0) {
+    console.log(
+      '🔔 Insertando notificaciones:',
+      notificationsToInsert.length
+    )
+
+    const col = ticketNotificationsCol()
+    const result = await col.insertMany(notificationsToInsert)
+
+    // result.insertedIds es un objeto {0: ObjectId, 1: ObjectId, ...}
+    const insertedIdsArray = Object.values(result.insertedIds)
+
+    notifications = notificationsToInsert.map((n, idx) => ({
+      ...n,
+      _id: insertedIdsArray[idx],
+    }))
+  } else {
+    console.log('ℹ️ No se generaron notificaciones para este ticket')
+  }
+
+  return { ticket, message, files, notifications }
 }

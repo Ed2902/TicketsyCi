@@ -6,7 +6,6 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import swaggerUi from 'swagger-ui-express'
-import webpush from 'web-push'
 
 import ticketsRouter from './modules/CrearTicket/router.js'
 import areasRouter from './modules/CrearArea/router.js'
@@ -17,28 +16,14 @@ import filesRouter from './modules/Files/router.js'
 import teamsRouter from './modules/teams/router.js'
 import NotificationsRouter from './modules/Notifications/router.js'
 import messagesRouter from './modules/Messages/router.js'
-import pushRouter from './alertas/push.routes.js'
+import pushRouter from './modules/Notifications/router.js'  
 
-// importar middleware de autenticación
 import { authMiddleware } from './config/jwt.js'
-
-// importar tu helper de CORS
 import { buildCors } from './config/corsOptions.js'
 
-// __dirname para ESM
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-// ===============================
-//   Configuración Web Push
-// ===============================
-webpush.setVapidDetails(
-  'mailto:tech@fastwaysas.com',
-  process.env.VAPID_PUBLIC_KEY,
-  process.env.VAPID_PRIVATE_KEY
-)
-
-// cargar swagger_output.json
 let swaggerFile = {}
 try {
   const p = path.join(__dirname, 'swagger_output.json')
@@ -53,16 +38,16 @@ try {
 
 export function createApp() {
   const app = express()
-
+ 
   // ===============================
   //   CORS usando tu helper
   // ===============================
   app.use(buildCors())
-
+  
   app.use(helmet())
   app.use(express.json())
   app.use(morgan('dev'))
-
+ 
   // Documentación Swagger (fuera del prefijo protegido)
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerFile))
 
@@ -71,26 +56,26 @@ export function createApp() {
     console.log('➡️', req.method, req.originalUrl)
     next()
   })
-
+  
   // ===============================
   //   ⭐ PREFIJO GLOBAL /tikets ⭐
   // ===============================
   const API_PREFIX = '/tikets'
 
-  // Proteger todas las rutas bajo el prefijo /tikets
+  // ✅ Todas las rutas bajo /tikets protegidas
   app.use(API_PREFIX, authMiddleware)
-
+  
   // ===============================
   //   ⭐ RUTAS CARGADAS EN ARRAY ⭐
   // ===============================
-  const rutas = [
+    const rutas = [
     ['messages', messagesRouter],
     ['tickets', ticketsRouter],
     ['notifications', NotificationsRouter],
     ['areas', areasRouter],
     ['files', filesRouter],
     ['teams', teamsRouter],
-    ['push', pushRouter],
+    ['push', pushRouter],            
   ]
 
   rutas.forEach(([nombre, router]) => {
@@ -100,7 +85,6 @@ export function createApp() {
   // Rutas agrupadas (index.js)
   app.use(API_PREFIX, routes)
 
-  // middlewares de error
   app.use(notFound)
   app.use(errorHandler)
 
