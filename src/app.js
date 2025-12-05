@@ -1,4 +1,3 @@
-// src/app.js
 import express from 'express'
 import morgan from 'morgan'
 import helmet from 'helmet'
@@ -62,6 +61,8 @@ export function createApp() {
   // ===============================
   const API_PREFIX = '/tikets'
 
+  app.use(`${API_PREFIX}/notifications`, NotificationsRouter)
+
   // ✅ Todas las rutas bajo /tikets protegidas
   app.use(API_PREFIX, authMiddleware)
   
@@ -71,7 +72,7 @@ export function createApp() {
     const rutas = [
     ['messages', messagesRouter],
     ['tickets', ticketsRouter],
-    ['notifications', NotificationsRouter],
+    // ['notifications', NotificationsRouter],
     ['areas', areasRouter],
     ['files', filesRouter],
     ['teams', teamsRouter],

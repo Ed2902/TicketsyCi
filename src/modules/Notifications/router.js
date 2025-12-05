@@ -1,5 +1,6 @@
-import { Router } from 'express'
-import { validate } from '../../middlewares/validate.js'
+// src/modules/Notifications/router.js
+import { Router } from "express";
+import { validate } from "../../middlewares/validate.js";
 import {
   listSchema,
   listAllSchema,
@@ -8,10 +9,12 @@ import {
   markReadSchema,
   markAllSchema,
   removeSchema,
-} from './validator.js'
-import * as Controller from './controller.js'
+  saveSubscriptionSchema,
+  removeSubscriptionSchema,
+} from "./validator.js";
+import * as Controller from "./controller.js";
 
-const router = Router()
+const router = Router();
 
 // ======================================================
 //   ⭐  Montado en /tikets/notifications
@@ -20,7 +23,7 @@ const router = Router()
 
 // Listar con filtros
 router.get(
-  '/',
+  "/",
   /*
     #swagger.tags = ['Notifications']
     #swagger.description = 'Lista notificaciones con filtros'
@@ -28,11 +31,11 @@ router.get(
   */
   validate(listSchema),
   Controller.list
-)
+);
 
 // Listar todas (debug)
 router.get(
-  '/all',
+  "/all",
   /*
     #swagger.tags = ['Notifications']
     #swagger.description = 'Lista todas las notificaciones'
@@ -40,11 +43,11 @@ router.get(
   */
   validate(listAllSchema),
   Controller.all
-)
+);
 
 // Detalle por ID
 router.get(
-  '/:id',
+  "/:id",
   /*
     #swagger.tags = ['Notifications']
     #swagger.description = 'Detalle de notificación por ID'
@@ -52,11 +55,11 @@ router.get(
   */
   validate(idParamSchema),
   Controller.detail
-)
+);
 
 // Crear notificación
 router.post(
-  '/',
+  "/",
   /*
     #swagger.tags = ['Notifications']
     #swagger.description = 'Crear una notificación'
@@ -64,11 +67,11 @@ router.post(
   */
   validate(createSchema),
   Controller.create
-)
+);
 
 // Marcar una como leída/no leída
 router.patch(
-  '/:id/read',
+  "/:id/read",
   /*
     #swagger.tags = ['Notifications']
     #swagger.description = 'Marca una notificación como leída/no leída'
@@ -76,11 +79,11 @@ router.patch(
   */
   validate(markReadSchema),
   Controller.markRead
-)
+);
 
 // Marcar todas como leídas/no leídas
 router.patch(
-  '/read-all',
+  "/read-all",
   /*
     #swagger.tags = ['Notifications']
     #swagger.description = 'Marca todas las notificaciones como leídas/no leídas'
@@ -88,11 +91,11 @@ router.patch(
   */
   validate(markAllSchema),
   Controller.markAll
-)
+);
 
 // Eliminar notificación
 router.delete(
-  '/:id',
+  "/:id",
   /*
     #swagger.tags = ['Notifications']
     #swagger.description = 'Eliminar una notificación por ID'
@@ -100,11 +103,39 @@ router.delete(
   */
   validate(removeSchema),
   Controller.remove
-)
+);
+
+// ==============================
+// Rutas WebPush: suscripciones
+// ==============================
+
+// Guardar/actualizar suscripción
+router.post(
+  "/subscriptions",
+  /*
+    #swagger.tags = ['Notifications']
+    #swagger.description = 'Registrar o actualizar una suscripción WebPush'
+    #swagger.path = '/notifications/subscriptions'
+  */
+  validate(saveSubscriptionSchema),
+  Controller.saveSubscription
+);
+
+// Eliminar suscripciones
+router.delete(
+  "/subscriptions",
+  /*
+    #swagger.tags = ['Notifications']
+    #swagger.description = 'Eliminar suscripciones WebPush'
+    #swagger.path = '/notifications/subscriptions'
+  */
+  validate(removeSubscriptionSchema),
+  Controller.removeSubscription
+);
 
 // Health check
 router.get(
-  '/health/ping',
+  "/health/ping",
   /*
     #swagger.tags = ['Health']
     #swagger.description = 'Health check del módulo Notifications'
@@ -113,9 +144,9 @@ router.get(
   (_req, res) =>
     res.json({
       ok: true,
-      module: 'Notifications',
+      module: "Notifications",
       ts: new Date().toISOString(),
     })
-)
+);
 
-export default router
+export default router;
