@@ -1,3 +1,4 @@
+// src/app.js
 import express from 'express'
 import morgan from 'morgan'
 import helmet from 'helmet'
@@ -15,7 +16,8 @@ import filesRouter from './modules/Files/router.js'
 import teamsRouter from './modules/teams/router.js'
 import NotificationsRouter from './modules/Notifications/router.js'
 import messagesRouter from './modules/Messages/router.js'
-import pushRouter from './modules/Notifications/router.js'  
+import pushRouter from './modules/Notifications/router.js'
+import catalogRouter from './modules/Catalogos/router.js'
 
 import { authMiddleware } from './config/jwt.js'
 import { buildCors } from './config/corsOptions.js'
@@ -37,16 +39,16 @@ try {
 
 export function createApp() {
   const app = express()
- 
+
   // ===============================
   //   CORS usando tu helper
   // ===============================
   app.use(buildCors())
-  
+
   app.use(helmet())
   app.use(express.json())
   app.use(morgan('dev'))
- 
+
   // Documentación Swagger (fuera del prefijo protegido)
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerFile))
 
@@ -55,28 +57,29 @@ export function createApp() {
     console.log('➡️', req.method, req.originalUrl)
     next()
   })
-  
+
   // ===============================
   //   ⭐ PREFIJO GLOBAL /tikets ⭐
   // ===============================
   const API_PREFIX = '/tikets'
 
+  // Notificaciones públicas (ej: webhook, etc.)
   app.use(`${API_PREFIX}/notifications`, NotificationsRouter)
 
   // ✅ Todas las rutas bajo /tikets protegidas
   app.use(API_PREFIX, authMiddleware)
-  
+
   // ===============================
   //   ⭐ RUTAS CARGADAS EN ARRAY ⭐
   // ===============================
-    const rutas = [
+  const rutas = [
     ['messages', messagesRouter],
     ['tickets', ticketsRouter],
-    // ['notifications', NotificationsRouter],
     ['areas', areasRouter],
     ['files', filesRouter],
     ['teams', teamsRouter],
-    ['push', pushRouter],            
+    ['push', pushRouter],
+    ['catalog', catalogRouter],
   ]
 
   rutas.forEach(([nombre, router]) => {
