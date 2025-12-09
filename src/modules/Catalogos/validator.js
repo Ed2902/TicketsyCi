@@ -41,7 +41,10 @@ export const updateCategorySchema = {
   body: z.object({
     name: z.string().min(1).optional(),
     description: z.string().optional(),
-    color: z.string().optional(),
+    color: z
+  .string()
+  .regex(/^#([0-9a-fA-F]{6})$/, 'color debe ser un hex válido')
+  .optional(),
     active: z.boolean().optional(),
   }),
 }
