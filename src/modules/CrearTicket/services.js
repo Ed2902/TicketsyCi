@@ -1,7 +1,9 @@
 import mongoose from 'mongoose'
 import { Ticket } from './model.js'
 import { Counter } from '../_shared/Counter.js'
-
+import { notifyTicketAssignedToPerson,
+  notifyTicketAssignedToGroup
+ } from '../Notifications/notifyEvents.js'
 /* ============================================================
    🔹 HELPERS PARA COLECCIONES
    ============================================================ */
@@ -217,7 +219,7 @@ export async function createTicketPackage({
   firstMessageBody,
   uploadedFiles = [],
 }) {
-  console.log('🧩 createTicketPackage() llamado con:', {
+  console.log("🧩 createTicketPackage() llamado con:", {
     orgId,
     principalId,
     title: ticketData?.title,
@@ -227,7 +229,7 @@ export async function createTicketPackage({
     assigneeGroup: ticketData?.assigneeGroup,
     firstMessageBody,
     uploadedFilesLen: uploadedFiles.length,
-  })
+  });
 
   const {
     title,
@@ -238,11 +240,13 @@ export async function createTicketPackage({
     assigneeType,
     assigneeId,
     assigneeGroup = [],
-  } = ticketData || {}
+    // opcional: si en algún punto le pasas el nombre del actor
+    actorName,
+  } = ticketData || {};
 
   // 👉 Consideramos que es GRUPO si viene un array con al menos 1 id
   const isGroup =
-    Array.isArray(assigneeGroup) && assigneeGroup.filter(Boolean).length > 0
+    Array.isArray(assigneeGroup) && assigneeGroup.filter(Boolean).length > 0;
 
   // Normalizamos ids del grupo (únicos, strings, sin vacíos)
   const normalizedGroupIds = isGroup
@@ -254,40 +258,40 @@ export async function createTicketPackage({
             .filter((v) => v.length > 0)
         )
       )
-    : []
+    : [];
 
   if (isGroup && normalizedGroupIds.length === 0) {
     throw new Error(
       'Debe enviar al menos un integrante válido en assigneeGroup para asignar a un grupo.'
-    )
+    );
   }
 
-  let assignee
+  let assignee;
 
   if (isGroup) {
     // 🔹 MODO GRUPO: usamos members, no id
     assignee = {
-      type: 'group',
-      // id no es requerido en el schema cuando type === 'group'
+      type: "group",
+      // id no es requerido cuando type === "group"
       members: normalizedGroupIds.map((id) => ({
         id, // luego si quieres puedes resolver name/email
       })),
-    }
+    };
   } else {
     // 🔹 MODO PERSONA/TEAM: se mantiene casi igual
     const normalizedType =
-      assigneeType === 'team'
-        ? 'team'
-        : 'person' // por defecto 'person'
+      assigneeType === "team"
+        ? "team"
+        : "person"; // por defecto 'person'
 
     assignee = {
       type: normalizedType,
       id: assigneeId || principalId, // 👈 fallback al creador
       // members queda vacío
-    }
+    };
   }
 
-  const generatedCode = ticketData.code ?? (await nextTicketNumber(orgId))
+  const generatedCode = ticketData.code ?? (await nextTicketNumber(orgId));
 
   const ticketDoc = await Ticket.create({
     code: generatedCode,
@@ -301,47 +305,47 @@ export async function createTicketPackage({
       id: principalId,
     },
     assignee, // 👈 persona o grupo
-  })
+  });
 
   const ticket =
-    typeof ticketDoc.toObject === 'function' ? ticketDoc.toObject() : ticketDoc
+    typeof ticketDoc.toObject === "function" ? ticketDoc.toObject() : ticketDoc;
 
-  console.log('🎫 Ticket creado:', {
+  console.log("🎫 Ticket creado:", {
     _id: ticket._id,
     code: ticket.code,
     title: ticket.title,
     assignee,
-  })
+  });
 
   // === Mensaje inicial (opcional) ===
-  const rawMessage = (firstMessageBody ?? ticketData.description ?? '').trim()
+  const rawMessage = (firstMessageBody ?? ticketData.description ?? "").trim();
 
-  console.log('💬 rawMessage calculado:', rawMessage)
+  console.log("💬 rawMessage calculado:", rawMessage);
 
-  let message = null
+  let message = null;
 
   if (rawMessage) {
-    const now = new Date()
+    const now = new Date();
 
     console.log(
-      '💾 Insertando mensaje en ticketMessages para ticket:',
+      "💾 Insertando mensaje en ticketMessages para ticket:",
       ticket._id
-    )
+    );
 
     const insertResult = await ticketMessagesCol().insertOne({
       orgId,
       ticketId: ticket._id,
       sender: {
         id: principalId,
-        type: 'requester',
+        type: "requester",
       },
       message: rawMessage,
       attachments: [],
       createdAt: now,
       updatedAt: now,
-    })
+    });
 
-    console.log('✅ Mensaje insertado con _id:', insertResult.insertedId)
+    console.log("✅ Mensaje insertado con _id:", insertResult.insertedId);
 
     message = {
       _id: insertResult.insertedId,
@@ -349,15 +353,15 @@ export async function createTicketPackage({
       ticketId: ticket._id,
       sender: {
         id: principalId,
-        type: 'requester',
+        type: "requester",
       },
       message: rawMessage,
       attachments: [],
       createdAt: now,
       updatedAt: now,
-    }
+    };
   } else {
-    console.log('⚠️ No se creó mensaje porque rawMessage está vacío')
+    console.log("⚠️ No se creó mensaje porque rawMessage está vacío");
   }
 
   // === Archivos (placeholder) ===
@@ -366,66 +370,50 @@ export async function createTicketPackage({
     mimeType: f.mimetype,
     size: f.size,
     ticketId: ticket._id,
-  }))
+  }));
 
   /* ============================================================
-     🔔 NOTIFICACIONES (persona / grupo) -> colección notifications
+     🔔 NOTIFICACIONES MODERNAS (persona / grupo)
+     - Usan Notification + WebPush vía notifyEvents.js
      ============================================================ */
 
-  const notificationsToInsert = []
+  // Actor = quien crea el ticket
+  const actor = {
+    id: principalId,
+    name: actorName || `Usuario ${principalId}`, // luego podemos pasar nombre real
+  };
 
-  if (isGroup) {
-    // 👥 Notificación para cada miembro del grupo
-    normalizedGroupIds.forEach((id) => {
-      notificationsToInsert.push({
-        orgId,
-        to: id,
-        type: 'ticket_assigned_group',
-        title: 'Nuevo ticket de tu grupo',
-        text: `Se creó un ticket asignado a tu grupo: ${title}`,
-        ticketId: ticket._id,
-        createdAt: new Date(),
-        read: false,
-      })
-    })
-  } else {
-    // 🧍 Notificación para la persona asignada (o el creador si no hay assigneeId)
-    const toId = assigneeId || principalId
+  // Persona
+  if (!isGroup) {
+    const toId = assignee.id; // ya tiene fallback al principalId arriba
     if (toId) {
-      notificationsToInsert.push({
+      console.log("🔔 Notificación: ticket_assigned_person =>", toId);
+      await notifyTicketAssignedToPerson({
         orgId,
-        to: String(toId),
-        type: 'ticket_assigned',
-        title: 'Nuevo ticket asignado',
-        text: `Tienes un nuevo ticket: ${title}`,
-        ticketId: ticket._id,
-        createdAt: new Date(),
-        read: false,
-      })
+        assigneeId: toId,
+        ticket,
+        actor,
+      });
+    } else {
+      console.log("ℹ️ No hay assigneeId para notificar (modo persona).");
     }
   }
 
-  let notifications = []
-
-  if (notificationsToInsert.length > 0) {
+  // Grupo
+  if (isGroup && normalizedGroupIds.length > 0) {
     console.log(
-      '🔔 Insertando notificaciones:',
-      notificationsToInsert.length
-    )
-
-    const col = ticketNotificationsCol()
-    const result = await col.insertMany(notificationsToInsert)
-
-    // result.insertedIds es un objeto {0: ObjectId, 1: ObjectId, ...}
-    const insertedIdsArray = Object.values(result.insertedIds)
-
-    notifications = notificationsToInsert.map((n, idx) => ({
-      ...n,
-      _id: insertedIdsArray[idx],
-    }))
-  } else {
-    console.log('ℹ️ No se generaron notificaciones para este ticket')
+      "🔔 Notificaciones para grupo (miembros):",
+      normalizedGroupIds
+    );
+    await notifyTicketAssignedToGroup({
+      orgId,
+      memberIds: normalizedGroupIds,
+      ticket,
+      actor,
+    });
   }
 
-  return { ticket, message, files, notifications }
+  // Ya no devolvemos las viejas "notifications" porque ahora
+  // se guardan en la colección notifications del módulo nuevo
+  return { ticket, message, files };
 }

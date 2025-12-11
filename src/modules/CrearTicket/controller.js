@@ -1,5 +1,7 @@
 import * as Service from './services.js'
 import { ORG_ENUM } from './model.js'
+import * as NotificationsService from "../Notifications/Service.js";
+import { sendPushToPrincipal } from "../Notifications/pushService.js";
 
 // helper: normaliza y valida orgId
 function resolveOrgId(req) {
@@ -226,18 +228,18 @@ export async function all(req, res, next) {
 // controller CrearTicket - BACKEND
 export async function createFull(req, res, next) {
   try {
-    const body = req.body || {}
+    const body = req.body || {};
 
     // 👉 Validar ORG
-    const org = resolveOrgId(req)
+    const org = resolveOrgId(req);
     if (org.error) {
-      return res.status(400).json({ error: true, message: org.error })
+      return res.status(400).json({ error: true, message: org.error });
     }
 
     // 👉 Validar principalId
-    const principalR = resolvePrincipal(req, body)
+    const principalR = resolvePrincipal(req, body);
     if (principalR.error) {
-      return res.status(400).json({ error: true, message: principalR.error })
+      return res.status(400).json({ error: true, message: principalR.error });
     }
 
     let {
@@ -250,16 +252,16 @@ export async function createFull(req, res, next) {
       assigneeId,
       assigneeGroup, // opcional, para grupos
       firstMessageBody,
-    } = body
+    } = body;
 
     // =========================
     //  🔧 Normalización asignación
     // =========================
 
-    const isGroup = assigneeType === 'group'
-    assigneeType = isGroup ? 'group' : 'person'
+    const isGroup = assigneeType === "group";
+    assigneeType = isGroup ? "group" : "person";
 
-    let normalizedGroup = []
+    let normalizedGroup = [];
 
     if (isGroup) {
       if (Array.isArray(assigneeGroup)) {
@@ -269,7 +271,7 @@ export async function createFull(req, res, next) {
               .map((v) => String(v).trim())
               .filter((v) => v.length > 0)
           )
-        )
+        );
       }
 
       if (normalizedGroup.length === 0) {
@@ -277,14 +279,14 @@ export async function createFull(req, res, next) {
           error: true,
           message:
             'Debe enviar al menos un integrante en assigneeGroup cuando assigneeType es "group".',
-        })
+        });
       }
-
+      
       // En modo grupo, dejamos que el id sea null en el modelo (no es requerido)
-      // NO lo tocamos aquí, lo maneja el service según type.
+     // NO lo tocamos aquí, lo maneja el service según type.
     }
 
-    const uploadedFiles = req.files || []
+    const uploadedFiles = req.files || [];
 
     const result = await Service.createTicketPackage({
       orgId: org.value,
@@ -301,10 +303,71 @@ export async function createFull(req, res, next) {
       },
       firstMessageBody,
       uploadedFiles,
-    })
+    });
+    const assigneeIds = [];
 
-    return res.status(201).json(result)
+    if (!isGroup) {
+      // Asignación a persona
+      if (assigneeId) {
+        assigneeIds.push(String(assigneeId));
+      }
+    } else {
+      // Asignación a grupo
+      normalizedGroup.forEach((id) => {
+        if (id) assigneeIds.push(String(id));
+      });
+    }
+
+    // Si no hay nadie asignado, no hacemos push (puede quedar solo al creador)
+    if (assigneeIds.length > 0) {
+      try {
+        // Nombre del creador para el mensaje
+        const user = req.user || {};
+        const creatorName =
+          user.username ||
+          user.nombre ||
+          `${user?.personal?.Nombre || ""} ${
+            user?.personal?.Apellido || ""
+          }`.trim() ||
+          `Usuario ${principalR.value}`;
+
+        // Payload base de la notificación
+        const payload = {
+          title: "Nuevo ticket asignado",
+          body: `${creatorName} ha asignado un ticket para ti.`,
+          url: "/tickets", // si luego quieres, lo cambiamos a /tickets/{id}
+        };
+
+        // Creamos notificación en Mongo + enviamos WebPush a cada asignado
+        await Promise.all(
+          assigneeIds.map(async (targetId) => {
+            // Guardar registro de notificación
+            await NotificationsService.create({
+              orgId: org.value,
+              principalId: String(targetId),
+              type: "ticket_assigned",
+              payload,
+              read: false,
+            });
+
+            // Intentar enviar push (si falla, no rompemos el flujo)
+            try {
+              await sendPushToPrincipal(String(targetId), payload, org.value);
+            } catch (pushErr) {
+              console.error(
+                "⚠️ Error enviando push por ticket asignado:",
+                pushErr
+              );
+            }
+          })
+        );
+      } catch (notifyErr) {
+        console.error("⚠️ Error general en notificaciones de ticket:", notifyErr);
+        // Importante: NO hacemos return ni rompemos la creación del ticket
+      }
+    }
+    return res.status(201).json(result);
   } catch (err) {
-    next(err)
+    next(err);
   }
 }

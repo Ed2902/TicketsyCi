@@ -12,7 +12,7 @@ import {
   saveSubscriptionSchema,
   removeSubscriptionSchema,
 } from "./validator.js";
-import * as Controller from "./controller.js";
+import * as Controller from "./Controller.js";
 
 const router = Router();
 
@@ -147,6 +147,17 @@ router.get(
       module: "Notifications",
       ts: new Date().toISOString(),
     })
+);
+
+// para hacer pruebas toca quitarlo adelane
+router.post(
+  "/test-push",
+  /*
+    #swagger.tags = ['Notifications']
+    #swagger.description = 'Enviar una notificación WebPush de prueba al principalId'
+    #swagger.path = '/notifications/test-push'
+  */
+  Controller.testPush
 );
 
 export default router;

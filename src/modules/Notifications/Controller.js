@@ -62,9 +62,19 @@ export async function create(req, res, next) {
   try {
     const b = req.validated.body;
 
+    const orgId = b.orgId ?? req.headers["x-org-id"];
+    const principalId = b.principalId ?? req.headers["x-principal-id"];
+
+    if (!orgId || !principalId) {
+      return res.status(400).json({
+        ok: false,
+        message: "orgId y principalId son requeridos para crear la notificación",
+      });
+    }
+
     const doc = await Service.create({
-      orgId: b.orgId,
-      principalId: b.principalId,
+      orgId,
+      principalId,
       type: b.type,
       payload: b.payload,
       read: b.read,
@@ -83,9 +93,9 @@ export async function create(req, res, next) {
       const url = b.payload?.url || "/";
 
       await sendPushToPrincipal(
-        b.principalId,
+        principalId,
         { title, body, url },
-        b.orgId // también le pasamos orgId
+        orgId
       );
     } catch (errPush) {
       console.error(
@@ -99,6 +109,7 @@ export async function create(req, res, next) {
     next(e);
   }
 }
+
 
 export async function markRead(req, res, next) {
   try {
@@ -153,13 +164,28 @@ export async function saveSubscription(req, res, next) {
     const b = req.validated.body;
     const orgId = b.orgId ?? req.headers["x-org-id"];
     const principalId = b.principalId ?? req.headers["x-principal-id"];
-    const { subscription } = b;
+    const subscription = b.subscription;
+
+    console.log("💾 Guardando suscripción WebPush:", {
+      orgId,
+      principalId,
+      endpoint: subscription?.endpoint,
+    });
 
     if (!principalId) {
       return res
         .status(400)
         .json({ ok: false, message: "principalId requerido" });
     }
+
+    if (!subscription || !subscription.endpoint || !subscription.keys) {
+      return res.status(400).json({
+        ok: false,
+        message: "subscription inválida (faltan endpoint o keys)",
+      });
+    }
+
+    const now = new Date();
 
     const doc = await PushSubscription.findOneAndUpdate(
       {
@@ -168,16 +194,24 @@ export async function saveSubscription(req, res, next) {
         "subscription.endpoint": subscription.endpoint,
       },
       {
-        $set: { principalId, orgId, subscription },
+        $set: {
+          principalId,
+          orgId,
+          subscription,
+          active: true,      // 🔹 siempre que guardas, la marcas como activa
+          lastSeenAt: now,   // 🔹 último momento en que supimos que existe
+        },
       },
       { upsert: true, new: true }
     );
 
-    res.status(201).json({ ok: true, subscription: doc });
+    return res.status(201).json({ ok: true, subscription: doc });
   } catch (e) {
     next(e);
   }
 }
+
+
 
 /**
  * Elimina suscripciones (por principal y optionally endpoint)
@@ -196,6 +230,33 @@ export async function removeSubscription(req, res, next) {
 
     const r = await PushSubscription.deleteMany(q);
     res.json({ ok: true, deleted: r.deletedCount || 0 });
+  } catch (e) {
+    next(e);
+  }
+}
+
+// para hacer buebas, esto toca quitarlo mas adelante ---------------------------------------que no se me olvide ajja---------------------------------------------------
+export async function testPush(req, res, next) {
+  try {
+    const b = req.body ?? {};
+    const orgId = b.orgId ?? req.headers["x-org-id"];
+    const principalId = b.principalId ?? req.headers["x-principal-id"];
+
+    if (!principalId) {
+      return res
+        .status(400)
+        .json({ ok: false, message: "principalId requerido para testPush" });
+    }
+
+    const payload = {
+      title: b.title || "🔔 Test WebPush",
+      body: b.body || "Si ves esto, las notificaciones push ya están funcionando.",
+      url: b.url || "/tickets",
+    };
+
+    await sendPushToPrincipal(principalId, payload, orgId);
+
+    res.json({ ok: true, message: "Push de prueba enviada (si hay suscripciones)" });
   } catch (e) {
     next(e);
   }
