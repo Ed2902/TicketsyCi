@@ -42,7 +42,7 @@ async function createAndPush({ orgId, principalId, type, payload, read = false }
    - reporter
    - assignee (persona / team)
    - miembros de grupo (si assignee.type === 'group')
-   - watchers (si existen en el ticket)
+   - watchers (si existen en el ticket) 
    Siempre excluye al actor (quien hizo la acción)
    ========================================================== */
 export function collectRecipientsForTicketEvent(ticket, actorId) {
