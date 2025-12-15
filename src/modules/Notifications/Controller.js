@@ -11,21 +11,37 @@ export async function list(req, res, next) {
   try {
     const q = req.validated?.query ?? {};
     const orgId = q.orgId ?? req.headers["x-org-id"];
-    const principalId = q.principalId ?? req.headers["x-principal-id"];
+
+    // ✅ NO confiar en query para esto en producción.
+    // Si aún no tienes auth middleware que ponga req.user, usa header x-principal-id.
+    const principalId = req.user?.principalId ?? req.headers["x-principal-id"];
+
+    if (!orgId) {
+      return res.status(400).json({ ok: false, message: "Falta x-org-id" });
+    }
+    if (!principalId) {
+      return res.status(400).json({
+        ok: false,
+        message: "Falta x-principal-id (o el token no trae principalId)",
+      });
+    }
 
     const result = await Service.list({
       orgId,
-      principalId,
+      principalId: String(principalId), // ✅ forzar filtro
       type: q.type,
       read: typeof q.read === "boolean" ? q.read : undefined,
       limit: q.limit,
       page: q.page,
+      // opcional: unreadOnly si lo manejas así en service
     });
+
     res.json(result);
   } catch (e) {
     next(e);
   }
 }
+
 
 export async function all(req, res, next) {
   try {
@@ -46,21 +62,45 @@ export async function all(req, res, next) {
 
 export async function detail(req, res, next) {
   try {
-    const orgId = req.headers["x-org-id"] ?? undefined;
+    const orgId = req.headers["x-org-id"];
+    const principalId = req.user?.principalId ?? req.headers["x-principal-id"];
     const id = req.validated?.params?.id;
-    const doc = await Service.detail({ orgId, id });
+
+    if (!orgId) return res.status(400).json({ ok: false, message: "Falta x-org-id" });
+    if (!principalId)
+      return res.status(400).json({ ok: false, message: "Falta x-principal-id" });
+
+    const doc = await Service.detail({ orgId, principalId: String(principalId), id });
+
     if (!doc)
-      return res
-        .status(404)
-        .json({ error: true, message: "Notificación no encontrada" });
+      return res.status(404).json({ error: true, message: "Notificación no encontrada" });
+
     res.json(doc);
   } catch (e) {
     next(e);
   }
 }
-export async function unreadCount(req, res) {
-  return res.json({ ok: true, count: 0 });
+
+export async function unreadCount(req, res, next) {
+  try {
+    const orgId = req.headers["x-org-id"];
+    const principalId = req.user?.principalId ?? req.headers["x-principal-id"];
+
+    if (!orgId) return res.status(400).json({ ok: false, message: "Falta x-org-id" });
+    if (!principalId)
+      return res.status(400).json({ ok: false, message: "Falta x-principal-id" });
+
+    const count = await Service.unreadCount({
+      orgId,
+      principalId: String(principalId),
+    });
+
+    return res.json({ ok: true, count });
+  } catch (e) {
+    next(e);
+  }
 }
+
 
 export async function create(req, res, next) {
   try {
@@ -117,19 +157,31 @@ export async function create(req, res, next) {
 
 export async function markRead(req, res, next) {
   try {
-    const orgId = req.headers["x-org-id"] ?? undefined;
+    const orgId = req.headers["x-org-id"];
+    const principalId = req.user?.principalId ?? req.headers["x-principal-id"];
     const id = req.validated.params.id;
     const read = req.validated?.body?.read ?? true;
-    const doc = await Service.markRead({ orgId, id, read });
+
+    if (!orgId) return res.status(400).json({ ok: false, message: "Falta x-org-id" });
+    if (!principalId)
+      return res.status(400).json({ ok: false, message: "Falta x-principal-id" });
+
+    const doc = await Service.markRead({
+      orgId,
+      principalId: String(principalId),
+      id,
+      read,
+    });
+
     if (!doc)
-      return res
-        .status(404)
-        .json({ error: true, message: "Notificación no encontrada" });
+      return res.status(404).json({ error: true, message: "Notificación no encontrada" });
+
     res.json(doc);
   } catch (e) {
     next(e);
   }
 }
+
 
 export async function markAll(req, res, next) {
   try {
@@ -147,18 +199,25 @@ export async function markAll(req, res, next) {
 
 export async function remove(req, res, next) {
   try {
-    const orgId = req.headers["x-org-id"] ?? undefined;
+    const orgId = req.headers["x-org-id"];
+    const principalId = req.user?.principalId ?? req.headers["x-principal-id"];
     const id = req.validated.params.id;
-    const ok = await Service.remove({ orgId, id });
+
+    if (!orgId) return res.status(400).json({ ok: false, message: "Falta x-org-id" });
+    if (!principalId)
+      return res.status(400).json({ ok: false, message: "Falta x-principal-id" });
+
+    const ok = await Service.remove({ orgId, principalId: String(principalId), id });
+
     if (!ok)
-      return res
-        .status(404)
-        .json({ error: true, message: "Notificación no encontrada" });
+      return res.status(404).json({ error: true, message: "Notificación no encontrada" });
+
     res.json({ ok: true, id });
   } catch (e) {
     next(e);
   }
 }
+
 
 /**
  * Guarda o actualiza una suscripción de push
