@@ -44,6 +44,16 @@ router.get(
   validate(listAllSchema),
   Controller.all
 );
+// Conteo de no leídas
+router.get(
+  "/unread-count",
+  /*
+    #swagger.tags = ['Notifications']
+    #swagger.description = 'Conteo de notificaciones no leídas del usuario'
+    #swagger.path = '/notifications/unread-count'
+  */
+  Controller.unreadCount
+);
 
 // Detalle por ID
 router.get(

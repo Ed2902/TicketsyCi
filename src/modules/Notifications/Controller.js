@@ -2,6 +2,7 @@
 import * as Service from "./Service.js";
 import { sendPushToPrincipal } from "../Notifications/pushService.js";
 import PushSubscription from "./PushSubscription.js";
+import e from "express";
 
 /**
  * Lista con filtros, usando query y/o headers
@@ -56,6 +57,9 @@ export async function detail(req, res, next) {
   } catch (e) {
     next(e);
   }
+}
+export async function unreadCount(req, res) {
+  return res.json({ ok: true, count: 0 });
 }
 
 export async function create(req, res, next) {
