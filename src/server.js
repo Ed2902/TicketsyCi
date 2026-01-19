@@ -1,31 +1,52 @@
-import 'dotenv/config' 
-import { connectDB } from './config/db.js'
-await connectDB()
+// src/server.js
+import 'dotenv/config' // ✅ esto carga .env antes que cualquier otra cosa
+import http from 'http'
+import mongoose from 'mongoose'
+import { Server as SocketIOServer } from 'socket.io'
+
 import { createApp } from './app.js'
+import { registerChatSocket } from './modules/chats/socket.chat.js'
 
+const PORT = process.env.PORT || 3000
 
-
-const PORT = process.env.PORT || 4000
-const ALLOW =
-  String(process.env.ALLOW_START_WITHOUT_DB || '').toLowerCase() === 'true'
-
-;(async () => {
+async function start() {
   try {
-    try {
-      await connectDB()
-    } catch (dbErr) {
-      if (!ALLOW) throw dbErr
+    if (process.env.MONGO_URI) {
+      await mongoose.connect(process.env.MONGO_URI)
+      console.log('✅ Mongo conectado')
+    } else {
       console.warn(
-        '⚠️  No se pudo conectar a Mongo, pero ALLOW_START_WITHOUT_DB=true. Arrancando sin DB.'
+        '⚠️  Falta MONGO_URI en .env (si ya conectas en otro lado, ignora esto).'
       )
     }
 
     const app = createApp()
+    const server = http.createServer(app)
 
-    // ✅ Ya NO montamos Swagger aquí; está en app.js
-    app.listen(PORT, () => console.log(`🚀 Server en http://localhost:${PORT}`))
+    const io = new SocketIOServer(server, {
+      cors: { origin: true, credentials: true },
+    })
+
+    globalThis.__io = io
+
+    io.on('connection', socket => {
+      socket.on('user:join', ({ id_personal }) => {
+        const pid = String(id_personal || '').trim()
+        if (!pid) return
+        socket.join(`user:${pid}`)
+        socket.emit('user:joined', { room: `user:${pid}` })
+      })
+    })
+
+    registerChatSocket(io)
+
+    server.listen(PORT, () =>
+      console.log(`✅ Server corriendo en puerto ${PORT}`)
+    )
   } catch (err) {
-    console.error('No se pudo iniciar el servidor:', err.message)
+    console.error('❌ Error iniciando server:', err)
     process.exit(1)
   }
-})()
+}
+
+start()
