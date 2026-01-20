@@ -1,15 +1,14 @@
-// routes.ticket.js
+// src/modules/Ticket/routes.ticket.js
 import { Router } from 'express'
 import * as TicketController from './controller.ticket.js'
+import { uploadAny } from '../../middlewares/uploadAny.js'
 import {
   validateListTickets,
-  validateListAssignedTickets,
   validateTicketIdParam,
   validateCreateTicket,
   validatePutTicket,
-  validatePatchState, // ✅ nuevo
+  validatePatchState,
   validatePatchAssign,
-  validateDeleteAssign,
   validatePatchAddRemoveIds,
   validatePatchServicios,
   validatePatchAttachments,
@@ -17,15 +16,24 @@ import {
 
 const router = Router()
 
+// LISTADOS (GET) – SIEMPRE PAGINADOS
 router.get('/', validateListTickets, TicketController.list)
-router.post('/', validateCreateTicket, TicketController.create)
 router.get('/mine', validateListTickets, TicketController.mine)
+router.get('/assigned', validateListTickets, TicketController.assigned)
+router.get('/count', validateListTickets, TicketController.count)
 
-router.get('/assigned', validateListAssignedTickets, TicketController.assigned)
+// CREATE (form-data + files)
+router.post(
+  '/',
+  uploadAny.any(), // ✅ parsea multipart/form-data
+  validateCreateTicket,
+  TicketController.create
+)
 
-router.get('/count', TicketController.count)
 router.get('/:id', validateTicketIdParam, TicketController.getById)
 
+// PUT excepcional (si lo usas con form-data también, puedes poner uploadAny.any())
+// si lo usas con JSON, déjalo sin upload
 router.put(
   '/:id',
   validateTicketIdParam,
@@ -33,14 +41,16 @@ router.put(
   TicketController.put
 )
 
-// ✅ NUEVO: cambio de estado con trazabilidad (recomendado)
+// PATCH estado (form-data + evidencias)
 router.patch(
   '/:id/state',
   validateTicketIdParam,
+  uploadAny.any(), // ✅ evidencias en cambio de estado
   validatePatchState,
   TicketController.patchState
 )
 
+// Asignación
 router.patch(
   '/:id/assign',
   validateTicketIdParam,
@@ -50,10 +60,11 @@ router.patch(
 router.delete(
   '/:id/assign',
   validateTicketIdParam,
-  validateDeleteAssign,
+  validatePatchAddRemoveIds,
   TicketController.deleteAssign
 )
 
+// Watchers
 router.patch(
   '/:id/watchers',
   validateTicketIdParam,
@@ -61,6 +72,7 @@ router.patch(
   TicketController.patchWatchers
 )
 
+// Operación
 router.patch(
   '/:id/operacion/servicios',
   validateTicketIdParam,
@@ -74,17 +86,20 @@ router.patch(
   TicketController.patchApoyo
 )
 
+// Adjuntos globales (si quieres subir binarios aquí también)
 router.patch(
   '/:id/attachments',
   validateTicketIdParam,
+  uploadAny.any(), // ✅ permite subir archivos
   validatePatchAttachments,
   TicketController.patchAttachments
 )
 
+// Soft delete
 router.patch(
   '/:id/deactivate',
   validateTicketIdParam,
-  validateDeleteAssign,
+  validatePatchAddRemoveIds,
   TicketController.deactivate
 )
 

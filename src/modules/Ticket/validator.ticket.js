@@ -1,8 +1,10 @@
-// src/modules/Ticket/validator.ticket.js
 import mongoose from 'mongoose'
 
 const isObjectId = v => mongoose.Types.ObjectId.isValid(v)
 
+// ======================================================
+// Helpers base
+// ======================================================
 function isValidIdPersonal(v) {
   return typeof v === 'string' && v.trim().length > 0 && v.trim().length <= 80
 }
@@ -15,12 +17,86 @@ function uniqTrim(arr) {
   return [...new Set(arr.map(x => String(x).trim()))].filter(Boolean)
 }
 
+function isValidDate(v) {
+  const d = new Date(v)
+  return !isNaN(d.getTime())
+}
+
+function toArray(v) {
+  if (v === undefined || v === null) return []
+  return Array.isArray(v) ? v : [v]
+}
+
+function readBracketObject(body, prefix) {
+  // Ej: prefix="asignado_a" => asignado_a[tipo], asignado_a[id]
+  const tipo = body?.[`${prefix}[tipo]`]
+  const id = body?.[`${prefix}[id]`]
+  if (tipo === undefined && id === undefined) return undefined
+  return { tipo, id }
+}
+
+function readOperacionFromBracket(body) {
+  const subtipo = body?.['operacion[subtipo]']
+  const cliente = body?.['operacion[cliente]']
+  const lote = body?.['operacion[lote]']
+  const producto = body?.['operacion[producto]']
+
+  const apoyo_ids = toArray(body?.['operacion[apoyo_ids][]'])
+    .map(String)
+    .filter(Boolean)
+  const servicios_adicionales = toArray(
+    body?.['operacion[servicios_adicionales][]']
+  )
+    .map(String)
+    .filter(Boolean)
+
+  if (
+    subtipo === undefined &&
+    cliente === undefined &&
+    lote === undefined &&
+    producto === undefined &&
+    !apoyo_ids.length &&
+    !servicios_adicionales.length
+  ) {
+    return undefined
+  }
+
+  const op = {}
+  if (subtipo !== undefined) op.subtipo = subtipo
+  if (cliente !== undefined) op.cliente = cliente
+  if (lote !== undefined) op.lote = lote
+  if (producto !== undefined) op.producto = producto
+  if (apoyo_ids.length) op.apoyo_ids = apoyo_ids
+  if (servicios_adicionales.length)
+    op.servicios_adicionales = servicios_adicionales
+
+  return op
+}
+
+function parseMaybeJSON(value) {
+  // Soporta form-data donde mandan un objeto/array como string JSON
+  if (typeof value !== 'string') return value
+  const s = value.trim()
+  if (!s) return value
+  if (!(s.startsWith('{') || s.startsWith('['))) return value
+  try {
+    return JSON.parse(s)
+  } catch {
+    return value
+  }
+}
+
+// ======================================================
+// Validadores compuestos
+// ======================================================
 function validateAsignadoA(asignado_a, errors) {
   if (!asignado_a || typeof asignado_a !== 'object') {
     errors.push('asignado_a es requerido.')
     return
   }
-  const { tipo, id } = asignado_a
+
+  const tipo = String(asignado_a.tipo ?? '').trim()
+  const id = asignado_a.id
 
   if (!['area', 'team', 'personal'].includes(tipo)) {
     errors.push('asignado_a.tipo debe ser area | team | personal.')
@@ -28,14 +104,15 @@ function validateAsignadoA(asignado_a, errors) {
   }
 
   if (tipo === 'personal') {
-    if (!isValidIdPersonal(id))
+    if (!isValidIdPersonal(id)) {
       errors.push(
-        'asignado_a.id debe ser id_personal (string) cuando tipo=personal.'
+        'asignado_a.id debe ser id_personal válido cuando tipo=personal.'
       )
+    }
   } else {
     if (typeof id !== 'string' || !isObjectId(id)) {
       errors.push(
-        'asignado_a.id debe ser ObjectId (string) cuando tipo=area|team.'
+        'asignado_a.id debe ser ObjectId válido cuando tipo=area|team.'
       )
     }
   }
@@ -46,6 +123,7 @@ function validateAttachmentsArray(adjuntos, errors) {
     errors.push('adjuntos debe ser un array.')
     return
   }
+
   const seen = new Set()
   for (const a of adjuntos) {
     if (!a || typeof a !== 'object') {
@@ -65,13 +143,16 @@ function validateAttachmentsArray(adjuntos, errors) {
   }
 }
 
-function validateNotaEstado(nota, errors) {
+function validateNota(nota, errors, fieldName = 'nota') {
   if (nota === undefined) return
-  if (typeof nota !== 'string') errors.push('nota_estado debe ser string.')
+  if (typeof nota !== 'string') errors.push(`${fieldName} debe ser string.`)
   else if (nota.trim().length > 500)
-    errors.push('nota_estado máximo 500 caracteres.')
+    errors.push(`${fieldName} máximo 500 caracteres.`)
 }
 
+// ======================================================
+// LIST (GET) – SIEMPRE PAGINADO
+// ======================================================
 export function validateListTickets(req, res, next) {
   const errors = []
   const { page, limit } = req.query
@@ -93,6 +174,9 @@ export function validateListTickets(req, res, next) {
     prioridad_id,
     categoria_id,
     orgId,
+    operacion_subtipo,
+    fecha_estimada_desde,
+    fecha_estimada_hasta,
     area_id,
     team_id,
   } = req.query
@@ -102,6 +186,13 @@ export function validateListTickets(req, res, next) {
     !['tarea', 'proyecto', 'operacion'].includes(String(tipo))
   ) {
     errors.push('tipo (query) inválido.')
+  }
+
+  if (
+    operacion_subtipo !== undefined &&
+    !['comercio', 'bodega'].includes(String(operacion_subtipo))
+  ) {
+    errors.push('operacion_subtipo inválido (comercio|bodega).')
   }
 
   for (const [k, v] of Object.entries({
@@ -121,6 +212,11 @@ export function validateListTickets(req, res, next) {
   if (team_id !== undefined && !isObjectId(team_id))
     errors.push('team_id (query) debe ser ObjectId válido.')
 
+  if (fecha_estimada_desde !== undefined && !isValidDate(fecha_estimada_desde))
+    errors.push('fecha_estimada_desde debe ser fecha válida.')
+  if (fecha_estimada_hasta !== undefined && !isValidDate(fecha_estimada_hasta))
+    errors.push('fecha_estimada_hasta debe ser fecha válida.')
+
   if (
     req.query.activo !== undefined &&
     !['true', 'false'].includes(String(req.query.activo))
@@ -132,33 +228,9 @@ export function validateListTickets(req, res, next) {
   next()
 }
 
-export function validateListAssignedTickets(req, res, next) {
-  const errors = []
-  const { id_personal, page, limit } = req.query
-
-  if (!id_personal || !isValidIdPersonal(String(id_personal))) {
-    errors.push(
-      'id_personal (query) es requerido y debe ser id_personal válido.'
-    )
-  }
-
-  // page/limit opcionales (si no vienen, el service usa defaults)
-  if (page !== undefined) {
-    const p = Number(page)
-    if (!Number.isInteger(p) || p < 1) errors.push('page debe ser entero >= 1.')
-  }
-  if (limit !== undefined) {
-    const l = Number(limit)
-    if (!Number.isInteger(l) || l < 1)
-      errors.push('limit debe ser entero >= 1.')
-    if (Number.isInteger(l) && l > 100)
-      errors.push('limit no puede ser mayor a 100.')
-  }
-
-  if (errors.length) return res.status(400).json({ ok: false, errors })
-  next()
-}
-
+// ======================================================
+// PARAM ID
+// ======================================================
 export function validateTicketIdParam(req, res, next) {
   const { id } = req.params
   if (!isObjectId(id))
@@ -166,9 +238,24 @@ export function validateTicketIdParam(req, res, next) {
   next()
 }
 
+// ======================================================
+// CREATE (form-data compatible)
+// ======================================================
 export function validateCreateTicket(req, res, next) {
   const errors = []
-  const {
+
+  // multer debe poner req.body siempre en multipart; si no, esto es un error de middleware
+  if (!req.body || typeof req.body !== 'object') {
+    return res.status(400).json({
+      ok: false,
+      errors: [
+        'Body no disponible. Verifica que la ruta use multer (uploadAny.any()).',
+      ],
+    })
+  }
+
+  // Lee directo o desde JSON string o desde bracket keys
+  let {
     orgId,
     tipo,
     titulo,
@@ -181,14 +268,32 @@ export function validateCreateTicket(req, res, next) {
     watchers,
     adjuntos,
     operacion,
-    nota_estado, // ✅ opcional (nota inicial)
+    fecha_estimada,
+    nota_estado,
   } = req.body
+
+  asignado_a =
+    parseMaybeJSON(asignado_a) || readBracketObject(req.body, 'asignado_a')
+
+  operacion = parseMaybeJSON(operacion) || readOperacionFromBracket(req.body)
+
+  watchers = parseMaybeJSON(watchers)
+  if (watchers === undefined) watchers = toArray(req.body['watchers[]'])
+  if (!Array.isArray(watchers) && watchers !== undefined) watchers = [watchers]
+  watchers = Array.isArray(watchers)
+    ? watchers.map(String).filter(Boolean)
+    : undefined
+
+  // adjuntos normalmente los arma el controller desde req.files.
+  // Pero si el cliente los manda (como JSON string), lo aceptamos y validamos.
+  adjuntos = parseMaybeJSON(adjuntos)
 
   if (!orgId || !isValidOrgIdString(orgId))
     errors.push('orgId es requerido y debe ser string válido.')
 
-  if (!tipo || !['tarea', 'proyecto', 'operacion'].includes(tipo))
+  if (!tipo || !['tarea', 'proyecto', 'operacion'].includes(String(tipo))) {
     errors.push('tipo es requerido (tarea|proyecto|operacion).')
+  }
 
   if (!titulo || typeof titulo !== 'string' || !titulo.trim())
     errors.push('titulo es requerido.')
@@ -196,56 +301,73 @@ export function validateCreateTicket(req, res, next) {
     errors.push('descripcion es requerido.')
 
   if (!categoria_id || !isObjectId(categoria_id))
-    errors.push('categoria_id es requerido y debe ser ObjectId válido.')
+    errors.push('categoria_id es requerido.')
   if (!prioridad_id || !isObjectId(prioridad_id))
-    errors.push('prioridad_id es requerido y debe ser ObjectId válido.')
+    errors.push('prioridad_id es requerido.')
   if (!estado_id || !isObjectId(estado_id))
-    errors.push('estado_id es requerido y debe ser ObjectId válido.')
+    errors.push('estado_id es requerido.')
 
   if (!creado_por || !isValidIdPersonal(creado_por))
-    errors.push('creado_por es requerido y debe ser id_personal (string).')
+    errors.push('creado_por es requerido (id_personal).')
 
-  validateAsignadoA(asignado_a, errors)
-  validateNotaEstado(nota_estado, errors)
-
-  if (watchers !== undefined) {
-    if (!Array.isArray(watchers)) errors.push('watchers debe ser un array.')
-    else {
-      const u = uniqTrim(watchers)
-      if (u.length !== watchers.length)
-        errors.push('watchers no puede tener duplicados.')
-      if (u.some(x => !isValidIdPersonal(x)))
-        errors.push('Cada watcher debe ser id_personal válido (string).')
-    }
+  if (
+    fecha_estimada !== undefined &&
+    String(fecha_estimada).trim() !== '' &&
+    !isValidDate(fecha_estimada)
+  ) {
+    errors.push('fecha_estimada debe ser fecha válida.')
   }
 
-  if (adjuntos !== undefined) validateAttachmentsArray(adjuntos, errors)
+  validateAsignadoA(asignado_a, errors)
+  validateNota(nota_estado, errors, 'nota_estado')
 
-  if (tipo === 'operacion') {
+  if (watchers !== undefined) {
+    if (!Array.isArray(watchers)) errors.push('watchers debe ser array.')
+    else if (uniqTrim(watchers).some(x => !isValidIdPersonal(x)))
+      errors.push('watchers debe contener id_personal válidos.')
+  }
+
+  if (adjuntos !== undefined && adjuntos !== null)
+    validateAttachmentsArray(adjuntos, errors)
+
+  if (String(tipo) === 'operacion') {
     if (!operacion || typeof operacion !== 'object')
       errors.push('operacion es requerida cuando tipo=operacion.')
     else {
+      const subtipo = String(operacion.subtipo ?? '').trim()
+      if (!['comercio', 'bodega'].includes(subtipo))
+        errors.push('operacion.subtipo es requerido (comercio|bodega).')
+
       if (
         !operacion.cliente ||
         typeof operacion.cliente !== 'string' ||
         !operacion.cliente.trim()
       ) {
-        errors.push(
-          'operacion.cliente es requerido (texto) cuando tipo=operacion.'
-        )
+        errors.push('operacion.cliente es requerido.')
+      }
+
+      // opcionales con arrays
+      if (operacion.apoyo_ids !== undefined) {
+        const a = Array.isArray(operacion.apoyo_ids)
+          ? operacion.apoyo_ids
+          : [operacion.apoyo_ids]
+        if (uniqTrim(a).some(x => !isValidIdPersonal(x)))
+          errors.push('operacion.apoyo_ids debe contener id_personal válidos.')
       }
       if (operacion.servicios_adicionales !== undefined) {
-        if (!Array.isArray(operacion.servicios_adicionales))
-          errors.push('operacion.servicios_adicionales debe ser array.')
-      }
-      if (operacion.apoyo_ids !== undefined) {
-        if (!Array.isArray(operacion.apoyo_ids))
-          errors.push('operacion.apoyo_ids debe ser array.')
-        else if (
-          uniqTrim(operacion.apoyo_ids).some(x => !isValidIdPersonal(x))
-        ) {
-          errors.push('operacion.apoyo_ids debe contener id_personal válidos.')
-        }
+        const s = Array.isArray(operacion.servicios_adicionales)
+          ? operacion.servicios_adicionales
+          : [operacion.servicios_adicionales]
+        const ok = s.every(
+          x =>
+            typeof x === 'string' &&
+            x.trim().length > 0 &&
+            x.trim().length <= 120
+        )
+        if (!ok)
+          errors.push(
+            'operacion.servicios_adicionales debe ser array de strings válidos.'
+          )
       }
     }
   }
@@ -254,24 +376,49 @@ export function validateCreateTicket(req, res, next) {
   next()
 }
 
+// ======================================================
+// PUT (EXCEPCIONAL)
+// ======================================================
 export function validatePutTicket(req, res, next) {
   const errors = []
-  const {
+
+  if (!req.body || typeof req.body !== 'object') {
+    return res.status(400).json({
+      ok: false,
+      errors: ['Body no disponible.'],
+    })
+  }
+
+  let {
+    id_personal,
+    orgId,
+    tipo,
     titulo,
     descripcion,
     categoria_id,
     prioridad_id,
     estado_id,
-    tipo,
-    orgId,
     asignado_a,
     watchers,
     adjuntos,
     operacion,
-    id_personal,
     activo,
-    nota_estado, // ✅ opcional (si cambias estado por PUT)
+    fecha_estimada,
+    nota_estado,
   } = req.body
+
+  asignado_a =
+    parseMaybeJSON(asignado_a) || readBracketObject(req.body, 'asignado_a')
+  operacion = parseMaybeJSON(operacion) || readOperacionFromBracket(req.body)
+
+  watchers = parseMaybeJSON(watchers)
+  if (watchers === undefined) watchers = toArray(req.body['watchers[]'])
+  if (!Array.isArray(watchers) && watchers !== undefined) watchers = [watchers]
+  watchers = Array.isArray(watchers)
+    ? watchers.map(String).filter(Boolean)
+    : undefined
+
+  adjuntos = parseMaybeJSON(adjuntos)
 
   if (!id_personal || !isValidIdPersonal(id_personal))
     errors.push('id_personal (actor) es requerido.')
@@ -279,7 +426,10 @@ export function validatePutTicket(req, res, next) {
   if (orgId !== undefined && !isValidOrgIdString(String(orgId)))
     errors.push('orgId debe ser string válido.')
 
-  if (tipo !== undefined && !['tarea', 'proyecto', 'operacion'].includes(tipo))
+  if (
+    tipo !== undefined &&
+    !['tarea', 'proyecto', 'operacion'].includes(String(tipo))
+  )
     errors.push('tipo inválido.')
 
   if (titulo !== undefined && (typeof titulo !== 'string' || !titulo.trim()))
@@ -304,141 +454,225 @@ export function validatePutTicket(req, res, next) {
 
   if (watchers !== undefined) {
     if (!Array.isArray(watchers)) errors.push('watchers debe ser array.')
-    else {
-      const u = uniqTrim(watchers)
-      if (u.length !== watchers.length)
-        errors.push('watchers no puede tener duplicados.')
-    }
+    else if (uniqTrim(watchers).some(x => !isValidIdPersonal(x)))
+      errors.push('watchers debe contener id_personal válidos.')
   }
 
-  if (adjuntos !== undefined) validateAttachmentsArray(adjuntos, errors)
+  if (adjuntos !== undefined && adjuntos !== null)
+    validateAttachmentsArray(adjuntos, errors)
 
-  if (tipo === 'operacion' && operacion !== undefined) {
+  if (String(tipo) === 'operacion' && operacion !== undefined) {
     if (!operacion || typeof operacion !== 'object')
       errors.push('operacion debe ser objeto.')
-    else if (
-      !operacion.cliente ||
-      typeof operacion.cliente !== 'string' ||
-      !operacion.cliente.trim()
-    ) {
-      errors.push('operacion.cliente es requerido cuando tipo=operacion.')
+    else {
+      if (
+        operacion.subtipo !== undefined &&
+        !['comercio', 'bodega'].includes(String(operacion.subtipo))
+      ) {
+        errors.push('operacion.subtipo inválido (comercio|bodega).')
+      }
+      if (
+        operacion.cliente !== undefined &&
+        (typeof operacion.cliente !== 'string' || !operacion.cliente.trim())
+      ) {
+        errors.push('operacion.cliente debe ser string no vacío.')
+      }
     }
   }
 
   if (activo !== undefined && typeof activo !== 'boolean')
     errors.push('activo debe ser boolean.')
 
-  validateNotaEstado(nota_estado, errors)
+  if (
+    fecha_estimada !== undefined &&
+    String(fecha_estimada).trim() !== '' &&
+    !isValidDate(fecha_estimada)
+  ) {
+    errors.push('fecha_estimada debe ser fecha válida.')
+  }
+
+  validateNota(nota_estado, errors, 'nota_estado')
 
   if (errors.length) return res.status(400).json({ ok: false, errors })
   next()
 }
 
-// ✅ NUEVO: PATCH estado dedicado
+// ======================================================
+// PATCH ESTADO (CORE) – form-data compatible
+// ======================================================
 export function validatePatchState(req, res, next) {
   const errors = []
-  const { id_personal, estado_id, nota } = req.body
+
+  if (!req.body || typeof req.body !== 'object') {
+    return res.status(400).json({
+      ok: false,
+      errors: [
+        'Body no disponible. Verifica que la ruta use multer (uploadAny.any()).',
+      ],
+    })
+  }
+
+  let { id_personal, estado_id, nota, fecha_estimada, adjuntos } = req.body
+
+  adjuntos = parseMaybeJSON(adjuntos)
 
   if (!id_personal || !isValidIdPersonal(id_personal))
     errors.push('id_personal (actor) es requerido.')
-
   if (!estado_id || !isObjectId(estado_id))
     errors.push('estado_id es requerido y debe ser ObjectId válido.')
 
-  if (nota !== undefined) {
-    if (typeof nota !== 'string') errors.push('nota debe ser string.')
-    else if (nota.trim().length > 500)
-      errors.push('nota máximo 500 caracteres.')
+  validateNota(nota, errors, 'nota')
+
+  if (
+    fecha_estimada !== undefined &&
+    String(fecha_estimada).trim() !== '' &&
+    !isValidDate(fecha_estimada)
+  ) {
+    errors.push('fecha_estimada debe ser fecha válida.')
   }
+
+  // adjuntos por evento normalmente los arma el controller desde req.files.
+  // Si el cliente los manda, validamos.
+  if (adjuntos !== undefined && adjuntos !== null)
+    validateAttachmentsArray(adjuntos, errors)
 
   if (errors.length) return res.status(400).json({ ok: false, errors })
   next()
 }
 
+// ======================================================
+// PATCH ASSIGN – form-data compatible
+// ======================================================
 export function validatePatchAssign(req, res, next) {
   const errors = []
-  const { id_personal, asignado_a } = req.body
+
+  if (!req.body || typeof req.body !== 'object') {
+    return res.status(400).json({ ok: false, errors: ['Body no disponible.'] })
+  }
+
+  let { id_personal, asignado_a } = req.body
+  asignado_a =
+    parseMaybeJSON(asignado_a) || readBracketObject(req.body, 'asignado_a')
 
   if (!id_personal || !isValidIdPersonal(id_personal))
-    errors.push('id_personal (actor) es requerido.')
-  if (asignado_a === undefined || asignado_a === null)
-    errors.push('asignado_a es requerido.')
-  else validateAsignadoA(asignado_a, errors)
+    errors.push('id_personal es requerido.')
+  validateAsignadoA(asignado_a, errors)
 
   if (errors.length) return res.status(400).json({ ok: false, errors })
   next()
 }
 
-export function validateDeleteAssign(req, res, next) {
-  const { id_personal } = req.body
-  if (!id_personal || !isValidIdPersonal(id_personal)) {
-    return res
-      .status(400)
-      .json({ ok: false, error: 'id_personal (actor) es requerido.' })
-  }
-  next()
-}
-
+// ======================================================
+// PATCH Add/Remove (watchers, apoyo, etc.)
+// - id_personal requerido
+// - add/remove opcionales
+// - soporta add[], remove[] en form-data
+// ======================================================
 export function validatePatchAddRemoveIds(req, res, next) {
   const errors = []
-  const { id_personal, add, remove } = req.body
+
+  if (!req.body || typeof req.body !== 'object') {
+    return res.status(400).json({ ok: false, errors: ['Body no disponible.'] })
+  }
+
+  let { id_personal, add, remove } = req.body
+
+  if (add === undefined) add = req.body['add[]']
+  if (remove === undefined) remove = req.body['remove[]']
+
+  add = parseMaybeJSON(add)
+  remove = parseMaybeJSON(remove)
+
+  if (add !== undefined && !Array.isArray(add)) add = toArray(add)
+  if (remove !== undefined && !Array.isArray(remove)) remove = toArray(remove)
 
   if (!id_personal || !isValidIdPersonal(id_personal))
     errors.push('id_personal (actor) es requerido.')
 
-  if (add !== undefined && !Array.isArray(add))
-    errors.push('add debe ser array.')
-  if (remove !== undefined && !Array.isArray(remove))
-    errors.push('remove debe ser array.')
-
-  if (Array.isArray(add) && add.some(x => !isValidIdPersonal(x)))
-    errors.push('add contiene id_personal inválidos.')
-  if (Array.isArray(remove) && remove.some(x => !isValidIdPersonal(x)))
-    errors.push('remove contiene id_personal inválidos.')
+  if (Array.isArray(add) && uniqTrim(add).some(x => !isValidIdPersonal(x)))
+    errors.push('add debe contener id_personal válidos.')
+  if (
+    Array.isArray(remove) &&
+    uniqTrim(remove).some(x => !isValidIdPersonal(x))
+  )
+    errors.push('remove debe contener id_personal válidos.')
 
   if (errors.length) return res.status(400).json({ ok: false, errors })
   next()
 }
 
+// ======================================================
+// PATCH Servicios (strings)
+// - soporta add[], remove[] en form-data
+// ======================================================
 export function validatePatchServicios(req, res, next) {
   const errors = []
-  const { id_personal, add, remove } = req.body
+
+  if (!req.body || typeof req.body !== 'object') {
+    return res.status(400).json({ ok: false, errors: ['Body no disponible.'] })
+  }
+
+  let { id_personal, add, remove } = req.body
+
+  if (add === undefined) add = req.body['add[]']
+  if (remove === undefined) remove = req.body['remove[]']
+
+  add = parseMaybeJSON(add)
+  remove = parseMaybeJSON(remove)
+
+  if (add !== undefined && !Array.isArray(add)) add = toArray(add)
+  if (remove !== undefined && !Array.isArray(remove)) remove = toArray(remove)
 
   if (!id_personal || !isValidIdPersonal(id_personal))
     errors.push('id_personal (actor) es requerido.')
-  if (add !== undefined && !Array.isArray(add))
-    errors.push('add debe ser array.')
-  if (remove !== undefined && !Array.isArray(remove))
-    errors.push('remove debe ser array.')
 
   const isValidText = v =>
     typeof v === 'string' && v.trim().length > 0 && v.trim().length <= 120
 
-  if (Array.isArray(add) && add.some(x => !isValidText(x)))
+  if (Array.isArray(add) && uniqTrim(add).some(x => !isValidText(x)))
     errors.push('add contiene servicios inválidos (string).')
-  if (Array.isArray(remove) && remove.some(x => !isValidText(x)))
+  if (Array.isArray(remove) && uniqTrim(remove).some(x => !isValidText(x)))
     errors.push('remove contiene servicios inválidos (string).')
 
   if (errors.length) return res.status(400).json({ ok: false, errors })
   next()
 }
 
+// ======================================================
+// PATCH Adjuntos globales
+// - si add viene como JSON, se valida
+// - si subes archivos, el controller debería construir add desde req.files
+// ======================================================
 export function validatePatchAttachments(req, res, next) {
   const errors = []
-  const { id_personal, add, remove } = req.body
+
+  if (!req.body || typeof req.body !== 'object') {
+    return res.status(400).json({
+      ok: false,
+      errors: [
+        'Body no disponible. Verifica que la ruta use multer (uploadAny.any()).',
+      ],
+    })
+  }
+
+  let { id_personal, add, remove } = req.body
+
+  if (remove === undefined) remove = req.body['remove[]']
+
+  add = parseMaybeJSON(add)
+  remove = parseMaybeJSON(remove)
+
+  if (remove !== undefined && !Array.isArray(remove)) remove = toArray(remove)
 
   if (!id_personal || !isValidIdPersonal(id_personal))
     errors.push('id_personal (actor) es requerido.')
 
-  if (add !== undefined) {
-    if (!Array.isArray(add)) errors.push('add debe ser array de adjuntos.')
-    else validateAttachmentsArray(add, errors)
-  }
+  if (add !== undefined && add !== null) validateAttachmentsArray(add, errors)
 
   if (remove !== undefined) {
     if (!Array.isArray(remove)) errors.push('remove debe ser array de fileId.')
-    else if (remove.some(x => typeof x !== 'string' || !x.trim()))
-      errors.push('remove debe contener fileId strings no vacíos.')
+    else if (remove.some(x => typeof x !== 'string' || !String(x).trim()))
+      errors.push('remove debe contener fileId strings.')
   }
 
   if (errors.length) return res.status(400).json({ ok: false, errors })

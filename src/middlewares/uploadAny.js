@@ -18,7 +18,9 @@ function safeName(name = 'file') {
 
 const storage = multer.diskStorage({
   destination: (req, _file, cb) => {
-    const { ticketId, chatId } = req.params
+    // ✅ soporta :ticketId o :id (en tickets usas :id)
+    const ticketId = req.params.ticketId || req.params.id
+    const chatId = req.params.chatId
 
     let base = path.join(process.cwd(), 'uploads')
 
@@ -40,9 +42,8 @@ const storage = multer.diskStorage({
 
 export const uploadAny = multer({
   storage,
-  // acepta todo tipo; pero limita para evitar abuso
   limits: {
     fileSize: 50 * 1024 * 1024, // 50MB por archivo
-    files: 50, // máximo 50 archivos por request
+    files: 50, // max 50 archivos por request
   },
 })

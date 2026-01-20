@@ -1,21 +1,26 @@
-// src/modules/Ticket/service.ticket.js
 import mongoose from 'mongoose'
 import { Ticket } from './model.ticket.js'
 import { TicketCounter } from './model.ticketCounter.js'
 
-// Para resolver miembros por asignación
 import { Area } from '../areas/model.area.js'
 import { Team } from '../teams/model.team.js'
 
-// Chats (ticket -> chat auto)
+// Si en tu proyecto existen estos servicios, déjalos.
+// Si no existen, comenta estas líneas y las llamadas.
 import {
   ensureTicketChat,
   syncTicketChat,
   buildTicketParticipants,
 } from '../chats/service.chat.js'
 
-// Notifications
 import { dispatchNotifications } from '../notifications/service.notification.js'
+
+// ======================================================
+// Helpers base
+// ======================================================
+function uniqTrim(arr) {
+  return [...new Set(arr.map(x => String(x).trim()))].filter(Boolean)
+}
 
 function parsePaging({ page, limit }) {
   const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 100)
@@ -24,29 +29,60 @@ function parsePaging({ page, limit }) {
   return { safePage, safeLimit, skip }
 }
 
-function uniqTrim(arr) {
-  return [...new Set(arr.map(x => String(x).trim()))].filter(Boolean)
+function safeSort({ sortBy, sortDir }) {
+  // 🔒 Whitelist de campos permitidos para sort
+  const allowed = new Set([
+    'createdAt',
+    'updatedAt',
+    'codeSeq',
+    'code',
+    'fecha_estimada',
+  ])
+
+  const by = allowed.has(String(sortBy)) ? String(sortBy) : 'updatedAt'
+  const dir =
+    String(sortDir).toLowerCase() === 'asc' || String(sortDir) === '1' ? 1 : -1
+
+  return { [by]: dir }
 }
 
+function toObjectId(v, field = 'id') {
+  if (!mongoose.Types.ObjectId.isValid(v)) {
+    const err = new Error(`${field} inválido`)
+    err.status = 400
+    throw err
+  }
+  return new mongoose.Types.ObjectId(v)
+}
+
+// ======================================================
+// Filtros (no explosivos)
+// ======================================================
 function buildFilters(q) {
   const filter = {}
 
   if (q.activo !== undefined) filter.activo = String(q.activo) === 'true'
   if (q.orgId) filter.orgId = String(q.orgId).trim()
-  if (q.tipo) filter.tipo = q.tipo
+  if (q.tipo) filter.tipo = String(q.tipo)
 
-  // catalogos son ObjectId (esto está bien)
-  if (q.estado_id) filter.estado_id = new mongoose.Types.ObjectId(q.estado_id)
+  if (q.estado_id) filter.estado_id = toObjectId(q.estado_id, 'estado_id')
   if (q.prioridad_id)
-    filter.prioridad_id = new mongoose.Types.ObjectId(q.prioridad_id)
+    filter.prioridad_id = toObjectId(q.prioridad_id, 'prioridad_id')
   if (q.categoria_id)
-    filter.categoria_id = new mongoose.Types.ObjectId(q.categoria_id)
+    filter.categoria_id = toObjectId(q.categoria_id, 'categoria_id')
 
-  /**
-   * ✅ IMPORTANTE:
-   * asignado_a.id para team/area se guarda como STRING (validator lo exige como string)
-   * por eso NO se debe comparar contra ObjectId(q.area_id/q.team_id).
-   */
+  if (q.operacion_subtipo) {
+    filter['operacion.subtipo'] = String(q.operacion_subtipo)
+  }
+
+  if (q.fecha_estimada_desde || q.fecha_estimada_hasta) {
+    filter.fecha_estimada = {}
+    if (q.fecha_estimada_desde)
+      filter.fecha_estimada.$gte = new Date(q.fecha_estimada_desde)
+    if (q.fecha_estimada_hasta)
+      filter.fecha_estimada.$lte = new Date(q.fecha_estimada_hasta)
+  }
+
   if (q.area_id) {
     filter['asignado_a.tipo'] = 'area'
     filter['asignado_a.id'] = String(q.area_id).trim()
@@ -57,44 +93,28 @@ function buildFilters(q) {
     filter['asignado_a.id'] = String(q.team_id).trim()
   }
 
-  // Este filtro global lo mantengo igual (tu comportamiento actual)
-  if (q.id_personal) {
-    const pid = String(q.id_personal).trim()
-    filter.$or = [
-      { creado_por: pid },
-      { watchers: pid },
-      { 'asignado_a.tipo': 'personal', 'asignado_a.id': pid },
-      { 'operacion.apoyo_ids': pid },
-    ]
-  }
-
   if (q.search && String(q.search).trim()) {
     const s = String(q.search).trim()
-    filter.$and = filter.$and || []
-    filter.$and.push({
-      $or: [
-        { titulo: { $regex: s, $options: 'i' } },
-        { descripcion: { $regex: s, $options: 'i' } },
-        { 'operacion.cliente': { $regex: s, $options: 'i' } },
-        { 'operacion.producto': { $regex: s, $options: 'i' } },
-        { 'operacion.lote': { $regex: s, $options: 'i' } },
-        { code: { $regex: s, $options: 'i' } },
-      ],
-    })
+    filter.$or = [
+      { titulo: { $regex: s, $options: 'i' } },
+      { descripcion: { $regex: s, $options: 'i' } },
+      { 'operacion.cliente': { $regex: s, $options: 'i' } },
+      { code: { $regex: s, $options: 'i' } },
+    ]
   }
 
   return filter
 }
 
-/**
- * Auto-increment por tipo
- */
+// ======================================================
+// Código autoincremental
+// ======================================================
 const TYPE_PREFIX = { operacion: 'OP_', tarea: 'TK_', proyecto: 'PY_' }
 
 async function nextTicketCodeByTipo(tipo) {
   const prefix = TYPE_PREFIX[tipo]
   if (!prefix) {
-    const err = new Error('Tipo de ticket inválido para generar código.')
+    const err = new Error('Tipo inválido.')
     err.status = 400
     throw err
   }
@@ -106,50 +126,43 @@ async function nextTicketCodeByTipo(tipo) {
     { new: true, upsert: true }
   ).lean()
 
-  const seq = Number(row.seq) || 1
-  const code = `${prefix}${String(seq).padStart(4, '0')}`
-  return { code, codePrefix: prefix, codeSeq: seq }
+  const seq = Number(row.seq)
+  return {
+    code: `${prefix}${String(seq).padStart(4, '0')}`,
+    codePrefix: prefix,
+    codeSeq: seq,
+  }
 }
 
-/**
- * Helpers: resolver participantes del ticket
- */
+// ======================================================
+// Participantes (para notificaciones/chat)
+// ======================================================
 async function resolveAssignedPersonals(asignado_a) {
   if (!asignado_a) return []
 
-  const { tipo, id } = asignado_a
+  if (asignado_a.tipo === 'personal')
+    return asignado_a.id ? [String(asignado_a.id).trim()] : []
 
-  if (tipo === 'personal') return id ? [String(id).trim()] : []
-
-  if (tipo === 'team') {
-    if (!id) return []
-    const team = await Team.findById(id).lean()
-    if (!team) return []
-    return uniqTrim(team.personal_ids || [])
+  if (asignado_a.tipo === 'team') {
+    const team = await Team.findById(asignado_a.id).lean()
+    return uniqTrim(team?.personal_ids || [])
   }
 
-  if (tipo === 'area') {
-    if (!id) return []
-    const area = await Area.findById(id).lean()
-    if (!area) return []
-    return uniqTrim(area.personal_ids || [])
+  if (asignado_a.tipo === 'area') {
+    const area = await Area.findById(asignado_a.id).lean()
+    return uniqTrim(area?.personal_ids || [])
   }
 
   return []
 }
 
-async function computeTicketParticipants(ticketDoc) {
-  const creado_por = ticketDoc.creado_por
-  const watchers = ticketDoc.watchers || []
-  const asignado_a = ticketDoc.asignado_a || null
-  const apoyo_ids = ticketDoc.operacion?.apoyo_ids || []
-  const assignedPersonals = await resolveAssignedPersonals(asignado_a)
-
+async function computeTicketParticipants(ticket) {
+  const assigned = await resolveAssignedPersonals(ticket.asignado_a)
   return buildTicketParticipants({
-    creado_por,
-    watchers,
-    assignedPersonals,
-    apoyo_ids,
+    creado_por: ticket.creado_por,
+    watchers: ticket.watchers || [],
+    assignedPersonals: assigned,
+    apoyo_ids: ticket.operacion?.apoyo_ids || [],
   })
 }
 
@@ -161,16 +174,15 @@ function ticketTarget(ticketId) {
   }
 }
 
+// ======================================================
+// CREATE
+// ======================================================
 export async function createTicket(payload) {
-  const watchers = payload.watchers ? uniqTrim(payload.watchers) : []
-  const adjuntos = payload.adjuntos ?? []
   const actor = String(payload.creado_por).trim()
-
   const { code, codePrefix, codeSeq } = await nextTicketCodeByTipo(payload.tipo)
 
   const base = {
     orgId: String(payload.orgId).trim(),
-
     code,
     codePrefix,
     codeSeq,
@@ -178,24 +190,34 @@ export async function createTicket(payload) {
     tipo: payload.tipo,
     titulo: payload.titulo.trim(),
     descripcion: payload.descripcion.trim(),
+
     categoria_id: payload.categoria_id,
     prioridad_id: payload.prioridad_id,
     estado_id: payload.estado_id,
 
-    // ✅ inicializa historial
+    fecha_estimada: payload.fecha_estimada
+      ? new Date(payload.fecha_estimada)
+      : null,
+    fecha_cierre_real: null,
+    cumplimiento: 'no_aplica',
+
     estado_historial: [
       {
         estado_id: payload.estado_id,
         nota: (payload.nota_estado || '').trim(),
+        fecha_estimada: payload.fecha_estimada
+          ? new Date(payload.fecha_estimada)
+          : null,
+        adjuntos: payload.adjuntos ?? [],
         changedBy: actor,
-        changedAt: new Date(),
       },
     ],
 
-    asignado_a: payload.asignado_a ? { ...payload.asignado_a } : null,
+    asignado_a: payload.asignado_a ?? null,
     creado_por: actor,
-    watchers,
-    adjuntos,
+    watchers: uniqTrim(payload.watchers ?? []),
+    adjuntos: payload.adjuntos ?? [],
+
     activo: true,
     createdBy: actor,
     updatedBy: actor,
@@ -203,57 +225,59 @@ export async function createTicket(payload) {
 
   if (payload.tipo === 'operacion') {
     base.operacion = {
-      cliente: payload.operacion.cliente.trim(),
-      lote: (payload.operacion.lote ?? '').trim(),
-      producto: (payload.operacion.producto ?? '').trim(),
+      subtipo: payload.operacion?.subtipo, // comercio|bodega (si lo mandas)
+      cliente: payload.operacion?.cliente?.trim(),
+      lote: (payload.operacion?.lote ?? '').trim(),
+      producto: (payload.operacion?.producto ?? '').trim(),
       servicios_adicionales: uniqTrim(
-        payload.operacion.servicios_adicionales ?? []
+        payload.operacion?.servicios_adicionales ?? []
       ),
-      apoyo_ids: uniqTrim(payload.operacion.apoyo_ids ?? []),
+      apoyo_ids: uniqTrim(payload.operacion?.apoyo_ids ?? []),
     }
   }
 
-  const doc = await Ticket.create(base)
-  const ticket = doc.toObject()
+  const ticket = (await Ticket.create(base)).toObject()
 
-  const participants = await computeTicketParticipants(ticket)
-  const chat = await ensureTicketChat({
-    ticketId: ticket._id,
-    participants,
-    actor_id_personal: actor,
-  })
+  // chat + notificaciones (si existen en tu proyecto)
+  try {
+    const participants = await computeTicketParticipants(ticket)
+    const chat = await ensureTicketChat({
+      ticketId: ticket._id,
+      participants,
+      actor_id_personal: actor,
+    })
+    await Ticket.findByIdAndUpdate(ticket._id, { chatId: chat._id })
+    ticket.chatId = chat._id
+  } catch {
+    // si no existe chat service, no rompe creación
+  }
 
-  await Ticket.findByIdAndUpdate(ticket._id, {
-    $set: { chatId: chat._id },
-  }).lean()
-
-  await dispatchNotifications({
-    actor_id_personal: actor,
-    to_ids: participants,
-    type: 'ticket.created',
-    title: 'Nuevo ticket',
-    body: `Se creó el ticket ${ticket.code}.`,
-    target: ticketTarget(ticket._id),
-    meta: {
-      ticketId: String(ticket._id),
-      tipo: ticket.tipo,
-      code: ticket.code,
-    },
-  })
-
-  return { ...ticket, chatId: chat._id }
+  return ticket
 }
 
+// ======================================================
+// GET by ID
+// ======================================================
+export async function getTicketById(id) {
+  const ticket = await Ticket.findById(id).lean()
+  if (!ticket) {
+    const err = new Error('Ticket no encontrado.')
+    err.status = 404
+    throw err
+  }
+  return ticket
+}
+
+// ======================================================
+// LIST (general)
+// ======================================================
 export async function listTickets(query) {
   const { safePage, safeLimit, skip } = parsePaging(query)
   const filter = buildFilters(query)
+  const sort = safeSort(query)
 
   const [items, total] = await Promise.all([
-    Ticket.find(filter)
-      .sort({ $natural: -1 })
-      .skip(skip)
-      .limit(safeLimit)
-      .lean(),
+    Ticket.find(filter).sort(sort).skip(skip).limit(safeLimit).lean(),
     Ticket.countDocuments(filter),
   ])
 
@@ -264,200 +288,281 @@ export async function listTickets(query) {
       page: safePage,
       limit: safeLimit,
       pages: Math.ceil(total / safeLimit) || 1,
+      sort,
     },
   }
 }
 
-export async function getTicketById(id) {
-  const doc = await Ticket.findById(id).lean()
-  if (!doc) {
+// ======================================================
+// LIST mine (scope opcional)
+// scope: all|created|watching|assigned|support
+// ======================================================
+export async function listMine(query) {
+  const { id_personal, scope = 'all' } = query
+  if (!id_personal) {
+    const err = new Error('id_personal (query) es requerido.')
+    err.status = 400
+    throw err
+  }
+
+  const base = buildFilters(query)
+
+  const pid = String(id_personal).trim()
+
+  const conditions = {
+    created: { creado_por: pid },
+    watching: { watchers: pid },
+    support: { 'operacion.apoyo_ids': pid },
+  }
+
+  if (scope === 'created') Object.assign(base, conditions.created)
+  else if (scope === 'watching') Object.assign(base, conditions.watching)
+  else if (scope === 'support') Object.assign(base, conditions.support)
+  else if (scope === 'all') {
+    base.$or = [
+      conditions.created,
+      conditions.watching,
+      conditions.support,
+      { 'asignado_a.tipo': 'personal', 'asignado_a.id': pid },
+    ]
+  } else {
+    const err = new Error('scope inválido.')
+    err.status = 400
+    throw err
+  }
+
+  return listTickets({ ...query, ...base })
+}
+
+// ======================================================
+// LIST assigned (a personal)
+// Incluye:
+// - asignado_a personal = id_personal
+// - asignado_a team donde el personal pertenece al team
+// - asignado_a area donde el personal pertenece al area
+// ======================================================
+export async function listAssignedToPersonal(query) {
+  const { id_personal } = query
+  if (!id_personal) {
+    const err = new Error('id_personal (query) es requerido.')
+    err.status = 400
+    throw err
+  }
+
+  const pid = String(id_personal).trim()
+  const base = buildFilters(query)
+  const sort = safeSort(query)
+  const { safePage, safeLimit, skip } = parsePaging(query)
+
+  // Buscar equipos/areas donde está el personal (proyección mínima)
+  const [teams, areas] = await Promise.all([
+    Team.find({ personal_ids: pid }, { _id: 1 }).limit(500).lean(),
+    Area.find({ personal_ids: pid }, { _id: 1 }).limit(500).lean(),
+  ])
+
+  const teamIds = teams.map(t => String(t._id))
+  const areaIds = areas.map(a => String(a._id))
+
+  base.$or = [
+    { 'asignado_a.tipo': 'personal', 'asignado_a.id': pid },
+    ...(teamIds.length
+      ? [{ 'asignado_a.tipo': 'team', 'asignado_a.id': { $in: teamIds } }]
+      : []),
+    ...(areaIds.length
+      ? [{ 'asignado_a.tipo': 'area', 'asignado_a.id': { $in: areaIds } }]
+      : []),
+  ]
+
+  const [items, total] = await Promise.all([
+    Ticket.find(base).sort(sort).skip(skip).limit(safeLimit).lean(),
+    Ticket.countDocuments(base),
+  ])
+
+  return {
+    items,
+    meta: {
+      total,
+      page: safePage,
+      limit: safeLimit,
+      pages: Math.ceil(total / safeLimit) || 1,
+      sort,
+    },
+  }
+}
+
+// ======================================================
+// COUNT (para reportes rápidos)
+// ======================================================
+export async function countTickets(query) {
+  const filter = buildFilters(query)
+
+  const [total, activos, cerradosConFecha, sinFecha] = await Promise.all([
+    Ticket.countDocuments(filter),
+    Ticket.countDocuments({ ...filter, activo: true }),
+    Ticket.countDocuments({
+      ...filter,
+      fecha_estimada: { $ne: null },
+      fecha_cierre_real: { $ne: null },
+    }),
+    Ticket.countDocuments({ ...filter, fecha_estimada: null }),
+  ])
+
+  return { total, activos, cerradosConFecha, sinFecha }
+}
+
+// ======================================================
+// PUT excepcional (si lo usas)
+// ======================================================
+export async function updateTicketPut(id, payload) {
+  const actor = String(payload.id_personal || payload.updatedBy || '').trim()
+  const ticket = await Ticket.findById(id)
+  if (!ticket) {
     const err = new Error('Ticket no encontrado.')
     err.status = 404
     throw err
   }
-  return doc
+
+  // Solo campos permitidos (evita que te cambien todo)
+  const allowed = [
+    'orgId',
+    'tipo',
+    'titulo',
+    'descripcion',
+    'categoria_id',
+    'prioridad_id',
+    'estado_id',
+    'asignado_a',
+    'watchers',
+    'adjuntos',
+    'activo',
+    'fecha_estimada',
+  ]
+
+  for (const k of allowed) {
+    if (payload[k] !== undefined) ticket[k] = payload[k]
+  }
+
+  if (payload.fecha_estimada !== undefined) {
+    ticket.fecha_estimada = payload.fecha_estimada
+      ? new Date(payload.fecha_estimada)
+      : null
+  }
+
+  ticket.updatedBy = actor || ticket.updatedBy
+  await ticket.save()
+  return ticket.toObject()
 }
 
-// ✅ NUEVO: PATCH estado dedicado (trazabilidad)
-export async function patchState(id, { id_personal, estado_id, nota }) {
+// ======================================================
+// PATCH estado (core)
+// ======================================================
+export async function patchState(
+  id,
+  { id_personal, estado_id, nota, fecha_estimada, adjuntos = [] }
+) {
   const actor = String(id_personal).trim()
   const now = new Date()
 
-  const before = await Ticket.findById(id).lean()
-  if (!before) {
+  const ticket = await Ticket.findById(id)
+  if (!ticket) {
     const err = new Error('Ticket no encontrado.')
     err.status = 404
     throw err
   }
 
-  // si no cambia, devuelve igual sin duplicar historial
-  if (String(before.estado_id) === String(estado_id)) return before
+  // actualizar estado
+  ticket.estado_id = estado_id
+  ticket.updatedBy = actor
 
-  const updated = await Ticket.findByIdAndUpdate(
-    id,
-    {
-      $set: { estado_id, updatedBy: actor },
-      $push: {
-        estado_historial: {
-          estado_id,
-          nota: (nota || '').trim(),
-          changedBy: actor,
-          changedAt: now,
-        },
-      },
-    },
-    { new: true }
-  ).lean()
+  // actualizar fecha estimada si viene
+  if (fecha_estimada !== undefined) {
+    ticket.fecha_estimada = fecha_estimada ? new Date(fecha_estimada) : null
+  }
 
-  const participants = await computeTicketParticipants(updated)
-  await dispatchNotifications({
-    actor_id_personal: actor,
-    to_ids: participants,
-    type: 'ticket.state_changed',
-    title: 'Estado actualizado',
-    body: `Se cambió el estado del ticket ${updated.code}.`,
-    target: ticketTarget(updated._id),
-    meta: {
-      ticketId: String(updated._id),
-      code: updated.code,
-      estado_id: String(estado_id),
-    },
+  // evento historial
+  ticket.estado_historial.push({
+    estado_id,
+    nota: (nota || '').trim(),
+    fecha_estimada:
+      fecha_estimada !== undefined
+        ? fecha_estimada
+          ? new Date(fecha_estimada)
+          : null
+        : ticket.fecha_estimada,
+    adjuntos,
+    changedBy: actor,
+    changedAt: now,
   })
 
-  return updated
-}
-
-export async function updateTicketPut(id, patch) {
-  const actor = String(patch.id_personal).trim()
-
-  const before = await Ticket.findById(id).lean()
-  if (!before) {
-    const err = new Error('Ticket no encontrado.')
-    err.status = 404
-    throw err
-  }
-
-  const update = { updatedBy: actor }
-  const push = {}
-
-  if (patch.orgId !== undefined) update.orgId = String(patch.orgId).trim()
-  if (patch.tipo !== undefined) update.tipo = patch.tipo
-  if (patch.titulo !== undefined) update.titulo = patch.titulo.trim()
-  if (patch.descripcion !== undefined)
-    update.descripcion = patch.descripcion.trim()
-
-  if (patch.categoria_id !== undefined) update.categoria_id = patch.categoria_id
-  if (patch.prioridad_id !== undefined) update.prioridad_id = patch.prioridad_id
-
-  // ✅ si cambia estado por PUT, registra historial
-  if (patch.estado_id !== undefined) {
-    update.estado_id = patch.estado_id
-    if (String(before.estado_id) !== String(patch.estado_id)) {
-      push.estado_historial = {
-        estado_id: patch.estado_id,
-        nota: (patch.nota_estado || '').trim(),
-        changedBy: actor,
-        changedAt: new Date(),
-      }
+  // 👇 OJO: aquí NO sabemos cuál estado es "cerrado" porque depende de catálogo.
+  // Si quieres: cuando cierres, usa endpoint dedicado o envía un flag.
+  // Por ahora: si ya existe fecha_estimada y llega fecha_cierre_real en payload, calculamos.
+  // (Puedes mejorar cuando tengas estados "cerrado" definidos en catálogo)
+  if (payloadHasCloseFlag({ estado_id })) {
+    ticket.fecha_cierre_real = now
+    if (ticket.fecha_estimada) {
+      ticket.cumplimiento =
+        now <= ticket.fecha_estimada ? 'cumplido' : 'incumplido'
+    } else {
+      ticket.cumplimiento = 'no_aplica'
     }
   }
 
-  if (patch.asignado_a !== undefined) update.asignado_a = patch.asignado_a
-  if (patch.watchers !== undefined) update.watchers = uniqTrim(patch.watchers)
-  if (patch.adjuntos !== undefined) update.adjuntos = patch.adjuntos
-  if (patch.activo !== undefined) update.activo = patch.activo
+  await ticket.save()
 
-  if ((patch.tipo ?? undefined) === 'operacion') {
-    if (patch.operacion !== undefined) {
-      update.operacion = {
-        cliente: patch.operacion.cliente.trim(),
-        lote: (patch.operacion.lote ?? '').trim(),
-        producto: (patch.operacion.producto ?? '').trim(),
-        servicios_adicionales: uniqTrim(
-          patch.operacion.servicios_adicionales ?? []
-        ),
-        apoyo_ids: uniqTrim(patch.operacion.apoyo_ids ?? []),
-      }
-    }
-  } else if (patch.tipo !== undefined && patch.tipo !== 'operacion') {
-    update.operacion = undefined
-  }
-
-  const mongoUpdate = { $set: update }
-  if (push.estado_historial)
-    mongoUpdate.$push = { estado_historial: push.estado_historial }
-
-  const updated = await Ticket.findByIdAndUpdate(id, mongoUpdate, {
-    new: true,
-    runValidators: true,
-  }).lean()
-
-  const affectsParticipants =
-    patch.asignado_a !== undefined ||
-    patch.watchers !== undefined ||
-    (patch.operacion && patch.operacion.apoyo_ids !== undefined)
-
-  if (affectsParticipants) {
-    const participants = await computeTicketParticipants(updated)
-    await syncTicketChat({
-      ticketId: updated._id,
-      participants,
+  // Notificaciones (si existe)
+  try {
+    const participants = await computeTicketParticipants(ticket)
+    await dispatchNotifications({
       actor_id_personal: actor,
+      to_ids: participants,
+      type: 'ticket.state_changed',
+      title: 'Estado actualizado',
+      body: `Estado actualizado en ${ticket.code}`,
+      target: ticketTarget(ticket._id),
     })
-  }
+  } catch {}
 
-  return updated
+  return ticket.toObject()
 }
 
-// ---- resto igual (sin tocar) ----
+// helper opcional para cierre (ajústalo luego a tu catálogo real)
+function payloadHasCloseFlag({ estado_id }) {
+  // Por ahora: NO cierra automáticamente.
+  // Si quieres cierre automático, cambia esta función para detectar estados de cierre por catálogo.
+  return false
+}
+
+// ======================================================
+// PATCH asignación / watchers / operación / adjuntos
+// (implementaciones simples y seguras)
+// ======================================================
 export async function patchAssign(id, { id_personal, asignado_a }) {
   const actor = String(id_personal).trim()
-
-  const updated = await Ticket.findByIdAndUpdate(
-    id,
-    { updatedBy: actor, asignado_a },
-    { new: true }
-  ).lean()
-
-  if (!updated) {
+  const ticket = await Ticket.findById(id)
+  if (!ticket) {
     const err = new Error('Ticket no encontrado.')
     err.status = 404
     throw err
   }
-
-  const participants = await computeTicketParticipants(updated)
-  await syncTicketChat({
-    ticketId: updated._id,
-    participants,
-    actor_id_personal: actor,
-  })
-
-  return updated
+  ticket.asignado_a = asignado_a
+  ticket.updatedBy = actor
+  await ticket.save()
+  return ticket.toObject()
 }
 
 export async function deleteAssign(id, { id_personal }) {
   const actor = String(id_personal).trim()
-
-  const updated = await Ticket.findByIdAndUpdate(
-    id,
-    { updatedBy: actor, asignado_a: null },
-    { new: true }
-  ).lean()
-
-  if (!updated) {
+  const ticket = await Ticket.findById(id)
+  if (!ticket) {
     const err = new Error('Ticket no encontrado.')
     err.status = 404
     throw err
   }
-
-  const participants = await computeTicketParticipants(updated)
-  await syncTicketChat({
-    ticketId: updated._id,
-    participants,
-    actor_id_personal: actor,
-  })
-
-  return updated
+  ticket.asignado_a = null
+  ticket.updatedBy = actor
+  await ticket.save()
+  return ticket.toObject()
 }
 
 export async function patchWatchers(
@@ -465,56 +570,50 @@ export async function patchWatchers(
   { id_personal, add = [], remove = [] }
 ) {
   const actor = String(id_personal).trim()
-  const addU = uniqTrim(add)
-  const removeU = uniqTrim(remove)
-
-  const update = { $set: { updatedBy: actor } }
-  if (addU.length) update.$addToSet = { watchers: { $each: addU } }
-  if (removeU.length) update.$pull = { watchers: { $in: removeU } }
-
-  const updated = await Ticket.findByIdAndUpdate(id, update, {
-    new: true,
-  }).lean()
-  if (!updated) {
+  const ticket = await Ticket.findById(id)
+  if (!ticket) {
     const err = new Error('Ticket no encontrado.')
     err.status = 404
     throw err
   }
 
-  const participants = await computeTicketParticipants(updated)
-  await syncTicketChat({
-    ticketId: updated._id,
-    participants,
-    actor_id_personal: actor,
-  })
+  const set = new Set((ticket.watchers || []).map(String))
+  for (const x of add || []) set.add(String(x))
+  for (const x of remove || []) set.delete(String(x))
 
-  return updated
+  ticket.watchers = [...set]
+  ticket.updatedBy = actor
+  await ticket.save()
+  return ticket.toObject()
 }
 
 export async function patchOperacionServicios(
   id,
   { id_personal, add = [], remove = [] }
 ) {
-  const update = { $set: { updatedBy: String(id_personal).trim() } }
-
-  if (add.length)
-    update.$addToSet = {
-      'operacion.servicios_adicionales': { $each: uniqTrim(add) },
-    }
-  if (remove.length)
-    update.$pull = {
-      'operacion.servicios_adicionales': { $in: uniqTrim(remove) },
-    }
-
-  const updated = await Ticket.findByIdAndUpdate(id, update, {
-    new: true,
-  }).lean()
-  if (!updated) {
+  const actor = String(id_personal).trim()
+  const ticket = await Ticket.findById(id)
+  if (!ticket) {
     const err = new Error('Ticket no encontrado.')
     err.status = 404
     throw err
   }
-  return updated
+  if (ticket.tipo !== 'operacion') {
+    const err = new Error('Este ticket no es de tipo operacion.')
+    err.status = 400
+    throw err
+  }
+
+  const set = new Set(
+    (ticket.operacion?.servicios_adicionales || []).map(String)
+  )
+  for (const x of add || []) set.add(String(x))
+  for (const x of remove || []) set.delete(String(x))
+
+  ticket.operacion.servicios_adicionales = [...set]
+  ticket.updatedBy = actor
+  await ticket.save()
+  return ticket.toObject()
 }
 
 export async function patchOperacionApoyo(
@@ -522,229 +621,67 @@ export async function patchOperacionApoyo(
   { id_personal, add = [], remove = [] }
 ) {
   const actor = String(id_personal).trim()
-
-  const update = { $set: { updatedBy: actor } }
-  if (add.length)
-    update.$addToSet = { 'operacion.apoyo_ids': { $each: uniqTrim(add) } }
-  if (remove.length)
-    update.$pull = { 'operacion.apoyo_ids': { $in: uniqTrim(remove) } }
-
-  const updated = await Ticket.findByIdAndUpdate(id, update, {
-    new: true,
-  }).lean()
-  if (!updated) {
+  const ticket = await Ticket.findById(id)
+  if (!ticket) {
     const err = new Error('Ticket no encontrado.')
     err.status = 404
     throw err
   }
+  if (ticket.tipo !== 'operacion') {
+    const err = new Error('Este ticket no es de tipo operacion.')
+    err.status = 400
+    throw err
+  }
 
-  const participants = await computeTicketParticipants(updated)
-  await syncTicketChat({
-    ticketId: updated._id,
-    participants,
-    actor_id_personal: actor,
-  })
+  const set = new Set((ticket.operacion?.apoyo_ids || []).map(String))
+  for (const x of add || []) set.add(String(x))
+  for (const x of remove || []) set.delete(String(x))
 
-  return updated
+  ticket.operacion.apoyo_ids = [...set]
+  ticket.updatedBy = actor
+  await ticket.save()
+  return ticket.toObject()
 }
 
 export async function patchAttachments(
   id,
   { id_personal, add = [], remove = [] }
 ) {
-  const update = { $set: { updatedBy: String(id_personal).trim() } }
-
-  if (Array.isArray(add) && add.length)
-    update.$addToSet = { adjuntos: { $each: add } }
-  if (Array.isArray(remove) && remove.length)
-    update.$pull = { adjuntos: { fileId: { $in: uniqTrim(remove) } } }
-
-  const updated = await Ticket.findByIdAndUpdate(id, update, {
-    new: true,
-  }).lean()
-  if (!updated) {
+  const actor = String(id_personal).trim()
+  const ticket = await Ticket.findById(id)
+  if (!ticket) {
     const err = new Error('Ticket no encontrado.')
     err.status = 404
     throw err
   }
-  return updated
+
+  const current = ticket.adjuntos || []
+  const byId = new Map(current.map(a => [String(a.fileId), a]))
+
+  for (const a of add || []) {
+    if (a?.fileId) byId.set(String(a.fileId), a)
+  }
+
+  for (const fileId of remove || []) {
+    byId.delete(String(fileId))
+  }
+
+  ticket.adjuntos = [...byId.values()]
+  ticket.updatedBy = actor
+  await ticket.save()
+  return ticket.toObject()
 }
 
 export async function deactivateTicket(id, { id_personal }) {
-  const updated = await Ticket.findByIdAndUpdate(
-    id,
-    { $set: { activo: false, updatedBy: String(id_personal).trim() } },
-    { new: true }
-  ).lean()
-
-  if (!updated) {
+  const actor = String(id_personal).trim()
+  const ticket = await Ticket.findById(id)
+  if (!ticket) {
     const err = new Error('Ticket no encontrado.')
     err.status = 404
     throw err
   }
-  return updated
-}
-
-export async function listMine({
-  id_personal,
-  scope = 'assigned,watching,created',
-  ...query
-}) {
-  const pid = String(id_personal).trim()
-  const scopes = new Set(
-    String(scope)
-      .split(',')
-      .map(s => s.trim())
-      .filter(Boolean)
-  )
-
-  const or = []
-  if (scopes.has('assigned'))
-    or.push({ 'asignado_a.tipo': 'personal', 'asignado_a.id': pid })
-  if (scopes.has('watching')) or.push({ watchers: pid })
-  if (scopes.has('created')) or.push({ creado_por: pid })
-
-  const filter = buildFilters(query)
-  filter.$and = filter.$and || []
-  filter.$and.push({ $or: or.length ? or : [{ watchers: pid }] })
-
-  const { safePage, safeLimit, skip } = parsePaging(query)
-
-  const [items, total] = await Promise.all([
-    Ticket.find(filter)
-      .sort({ $natural: -1 })
-      .skip(skip)
-      .limit(safeLimit)
-      .lean(),
-    Ticket.countDocuments(filter),
-  ])
-
-  return {
-    items,
-    meta: {
-      total,
-      page: safePage,
-      limit: safeLimit,
-      pages: Math.ceil(total / safeLimit) || 1,
-    },
-  }
-}
-
-export async function listAssignedToPersonal({ id_personal, ...query }) {
-  const pid = String(id_personal).trim()
-  if (!pid) {
-    const err = new Error('id_personal es requerido.')
-    err.status = 400
-    throw err
-  }
-
-  // 1) Descubrir memberships (teams/areas donde está pid)
-  const [teams, areas] = await Promise.all([
-    Team.find({ personal_ids: pid }).select({ _id: 1 }).lean(),
-    Area.find({ personal_ids: pid }).select({ _id: 1 }).lean(),
-  ])
-
-  const teamIds = (teams || []).map(t => String(t._id))
-  const areaIds = (areas || []).map(a => String(a._id))
-
-  // 2) Construir filtro base (sin id_personal para no activar el $or global de buildFilters)
-  const { safePage, safeLimit, skip } = parsePaging(query)
-  const filter = buildFilters(query)
-
-  const assignedOr = [{ 'asignado_a.tipo': 'personal', 'asignado_a.id': pid }]
-  if (teamIds.length)
-    assignedOr.push({
-      'asignado_a.tipo': 'team',
-      'asignado_a.id': { $in: teamIds },
-    })
-  if (areaIds.length)
-    assignedOr.push({
-      'asignado_a.tipo': 'area',
-      'asignado_a.id': { $in: areaIds },
-    })
-
-  filter.$and = filter.$and || []
-  filter.$and.push({ $or: assignedOr })
-
-  const [itemsRaw, total] = await Promise.all([
-    Ticket.find(filter)
-      .sort({ $natural: -1 })
-      .skip(skip)
-      .limit(safeLimit)
-      .lean(),
-    Ticket.countDocuments(filter),
-  ])
-
-  // 3) Enriquecer: assignedMembers por ticket (sin romper los campos del ticket)
-  const teamIdsInTickets = uniqTrim(
-    itemsRaw
-      .filter(
-        t => t.asignado_a && t.asignado_a.tipo === 'team' && t.asignado_a.id
-      )
-      .map(t => t.asignado_a.id)
-  )
-  const areaIdsInTickets = uniqTrim(
-    itemsRaw
-      .filter(
-        t => t.asignado_a && t.asignado_a.tipo === 'area' && t.asignado_a.id
-      )
-      .map(t => t.asignado_a.id)
-  )
-
-  const [teamsDocs, areasDocs] = await Promise.all([
-    teamIdsInTickets.length
-      ? Team.find({ _id: { $in: teamIdsInTickets } })
-          .select({ personal_ids: 1 })
-          .lean()
-      : [],
-    areaIdsInTickets.length
-      ? Area.find({ _id: { $in: areaIdsInTickets } })
-          .select({ personal_ids: 1 })
-          .lean()
-      : [],
-  ])
-
-  const teamMembersById = new Map(
-    (teamsDocs || []).map(t => [String(t._id), uniqTrim(t.personal_ids || [])])
-  )
-  const areaMembersById = new Map(
-    (areasDocs || []).map(a => [String(a._id), uniqTrim(a.personal_ids || [])])
-  )
-
-  const items = itemsRaw.map(t => {
-    const asignado = t.asignado_a || null
-    let assignedMembers = []
-
-    if (asignado?.tipo === 'personal') {
-      assignedMembers = asignado.id ? [String(asignado.id).trim()] : []
-    } else if (asignado?.tipo === 'team') {
-      assignedMembers = teamMembersById.get(String(asignado.id)) || []
-    } else if (asignado?.tipo === 'area') {
-      assignedMembers = areaMembersById.get(String(asignado.id)) || []
-    }
-
-    return { ...t, assignedMembers }
-  })
-
-  return {
-    items,
-    meta: {
-      total,
-      page: safePage,
-      limit: safeLimit,
-      pages: Math.ceil(total / safeLimit) || 1,
-    },
-  }
-}
-
-export async function countTickets(query) {
-  const filter = buildFilters(query)
-  const total = await Ticket.countDocuments(filter)
-
-  const byTipo = await Ticket.aggregate([
-    { $match: filter },
-    { $group: { _id: '$tipo', total: { $sum: 1 } } },
-  ])
-
-  return { total, byTipo }
+  ticket.activo = false
+  ticket.updatedBy = actor
+  await ticket.save()
+  return ticket.toObject()
 }
