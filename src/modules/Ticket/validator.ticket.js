@@ -146,8 +146,8 @@ function validateAttachmentsArray(adjuntos, errors) {
 function validateNota(nota, errors, fieldName = 'nota') {
   if (nota === undefined) return
   if (typeof nota !== 'string') errors.push(`${fieldName} debe ser string.`)
-  else if (nota.trim().length > 500)
-    errors.push(`${fieldName} máximo 500 caracteres.`)
+  else if (nota.trim().length > 25000)
+    errors.push(`${fieldName} máximo 25000 caracteres.`)
 }
 
 // ======================================================
