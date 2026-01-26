@@ -7,20 +7,20 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import swaggerUi from 'swagger-ui-express'
 
-// Routers (solo lo trabajado)
-import areasRouter from './modules/areas/routes.area.js'
-import catalogRouter from './modules/Catalogos/routes.catalog.js'
-import teamsRouter from './modules/teams/routes.team.js'
-import ticketsRouter from './modules/Ticket/routes.ticket.js'
-import chatsRouter from './modules/chats/routes.chat.js'
-import notificationsRouter from './modules/notifications/routes.notification.js' // ✅ NUEVO
+// Routers (case EXACTO según tu estructura)
+import areasRouter from './modules/Areas/routes.area.js' // ✅ routes.area.js (plural)
+import catalogRouter from './modules/Catalogos/routes.catalog.js' // ✅ Catalogos (C mayúscula)
+import teamsRouter from './modules/teams/routes.team.js' // ✅ teams (minúscula)
+import ticketsRouter from './modules/Ticket/routes.ticket.js' // ✅ Ticket (T mayúscula)
+import chatsRouter from './modules/chats/routes.chat.js' // ✅ chats (minúscula)
+import notificationsRouter from './modules/notifications/routes.notification.js'
 
 // Middlewares
 import notFound from './middlewares/notFound.js'
 import errorHandler from './middlewares/errorHandler.js'
 
-// 🔹 Registrar modelos
-import './modules/areas/model.area.js'
+// 🔹 Registrar modelos (case EXACTO)
+import './modules/Areas/model.area.js'
 import './modules/teams/model.team.js'
 import './modules/Catalogos/model.catalog.js'
 import './modules/Ticket/model.ticket.js'
@@ -47,20 +47,25 @@ try {
   } else {
     console.warn('⚠️  Falta swagger_output.json. Ejecuta: npm run swagger')
   }
-} catch {
-  console.warn('⚠️  No se pudo cargar swagger_output.json.')
+} catch (e) {
+  console.warn('⚠️  No se pudo cargar swagger_output.json.', e)
 }
 
 export function createApp() {
   const app = express()
 
-  // ✅ SOLO ESTO: desactivar ETag global (evita 304)
+  // ✅ Desactivar ETag global (evita 304)
   app.set('etag', false)
 
   // Middlewares base
-  app.use(buildCors())
+  const corsMw = buildCors()
+  app.use(corsMw)
+
+  // ✅ Responder preflight ANTES de auth (clave para CORS)
+  app.options('*', corsMw)
+
   app.use(helmet())
-  app.use(express.json())
+  app.use(express.json({ limit: '10mb' }))
   app.use(morgan('dev'))
 
   // ✅ Servir uploads (para abrir adjuntos desde el front)
@@ -72,7 +77,7 @@ export function createApp() {
   // Prefijo global
   const API_PREFIX = '/tikets'
 
-  // ✅ SOLO ESTO: no-cache para la API (evita caches intermedios)
+  // ✅ no-cache para la API (evita caches intermedios)
   app.use(API_PREFIX, (req, res, next) => {
     res.setHeader(
       'Cache-Control',
@@ -84,22 +89,22 @@ export function createApp() {
     next()
   })
 
+  // ✅ Importante: NO forzar auth en OPTIONS (por si jwt middleware no lo ignora)
+  app.use(API_PREFIX, (req, res, next) => {
+    if (req.method === 'OPTIONS') return res.sendStatus(204)
+    next()
+  })
+
   // Auth global
   app.use(API_PREFIX, authMiddleware)
 
-  // Rutas trabajadas (en array)
-  const rutas = [
-    ['areas', areasRouter],
-    ['catalog', catalogRouter],
-    ['teams', teamsRouter],
-    ['tickets', ticketsRouter],
-    ['chats', chatsRouter],
-    ['notifications', notificationsRouter],
-  ]
-
-  rutas.forEach(([nombre, router]) => {
-    app.use(`${API_PREFIX}/${nombre}`, router)
-  })
+  // Rutas
+  app.use(`${API_PREFIX}/areas`, areasRouter)
+  app.use(`${API_PREFIX}/catalog`, catalogRouter)
+  app.use(`${API_PREFIX}/teams`, teamsRouter)
+  app.use(`${API_PREFIX}/tickets`, ticketsRouter)
+  app.use(`${API_PREFIX}/chats`, chatsRouter)
+  app.use(`${API_PREFIX}/notifications`, notificationsRouter)
 
   // Errores
   app.use(notFound)
