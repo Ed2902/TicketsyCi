@@ -36,6 +36,9 @@ router.get('/count', C.count)
 router.patch('/:id/read', validateIdParam, validateReadOne, C.readOne)
 router.patch('/read-all', validateReadAll, C.readAll)
 
+// ✅ NUEVO: marcar notificaciones como leídas por ticket
+router.patch('/read-by-ticket', C.readByTicket)
+
 // =====================
 // Web Push (suscripción)
 // =====================

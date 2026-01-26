@@ -5,8 +5,6 @@ import { TicketCounter } from './model.ticketCounter.js'
 import { Area } from '../areas/model.area.js'
 import { Team } from '../teams/model.team.js'
 
-// Si en tu proyecto existen estos servicios, déjalos.
-// Si no existen, comenta estas líneas y las llamadas.
 import {
   ensureTicketChat,
   syncTicketChat,
@@ -30,7 +28,6 @@ function parsePaging({ page, limit }) {
 }
 
 function safeSort({ sortBy, sortDir }) {
-  // 🔒 Whitelist de campos permitidos para sort
   const allowed = new Set([
     'createdAt',
     'updatedAt',
@@ -166,11 +163,31 @@ async function computeTicketParticipants(ticket) {
   })
 }
 
-function ticketTarget(ticketId) {
+// ======================================================
+// Targets (✅ rutas reales del Front)
+// ======================================================
+function ticketTargetBase(ticketId) {
   return {
     type: 'ticket',
     params: { ticketId: String(ticketId) },
-    url: `/tickets/${String(ticketId)}`,
+    url: '/', // se sobreescribe con resolver
+  }
+}
+
+function ticketTargetMisTareas(ticketId) {
+  return {
+    type: 'ticket',
+    params: { ticketId: String(ticketId) },
+    url: `/tickets?ticketsSection=misTareas&ticketId=${encodeURIComponent(String(ticketId))}`,
+  }
+}
+
+function ticketTargetMisCreaciones(ticketId) {
+  const id = String(ticketId)
+  return {
+    type: 'ticket',
+    params: { ticketId: id },
+    url: `/tickets?ticketsSection=misCreaciones&ticketId=${encodeURIComponent(id)}`,
   }
 }
 
@@ -225,7 +242,7 @@ export async function createTicket(payload) {
 
   if (payload.tipo === 'operacion') {
     base.operacion = {
-      subtipo: payload.operacion?.subtipo, // comercio|bodega (si lo mandas)
+      subtipo: payload.operacion?.subtipo,
       cliente: payload.operacion?.cliente?.trim(),
       lote: (payload.operacion?.lote ?? '').trim(),
       producto: (payload.operacion?.producto ?? '').trim(),
@@ -238,9 +255,10 @@ export async function createTicket(payload) {
 
   const ticket = (await Ticket.create(base)).toObject()
 
-  // chat + notificaciones (si existen en tu proyecto)
+  // chat + notificaciones
   try {
     const participants = await computeTicketParticipants(ticket)
+
     const chat = await ensureTicketChat({
       ticketId: ticket._id,
       participants,
@@ -248,8 +266,20 @@ export async function createTicket(payload) {
     })
     await Ticket.findByIdAndUpdate(ticket._id, { chatId: chat._id })
     ticket.chatId = chat._id
+
+    // ✅ Notificación al crear ticket
+    // En creación, los receptores (asignados/watchers/apoyo) deben ir a MisTareas
+    await dispatchNotifications({
+      actor_id_personal: actor,
+      to_ids: participants,
+      type: 'ticket.created',
+      title: `Nuevo ticket ${ticket.code}`,
+      body: ticket.titulo,
+      target: ticketTargetBase(ticket._id),
+      targetResolver: () => ticketTargetMisTareas(ticket._id),
+    })
   } catch {
-    // si no existe chat service, no rompe creación
+    // no rompe creación
   }
 
   return ticket
@@ -295,7 +325,6 @@ export async function listTickets(query) {
 
 // ======================================================
 // LIST mine (scope opcional)
-// scope: all|created|watching|assigned|support
 // ======================================================
 export async function listMine(query) {
   const { id_personal, scope = 'all' } = query
@@ -336,10 +365,6 @@ export async function listMine(query) {
 
 // ======================================================
 // LIST assigned (a personal)
-// Incluye:
-// - asignado_a personal = id_personal
-// - asignado_a team donde el personal pertenece al team
-// - asignado_a area donde el personal pertenece al area
 // ======================================================
 export async function listAssignedToPersonal(query) {
   const { id_personal } = query
@@ -354,7 +379,6 @@ export async function listAssignedToPersonal(query) {
   const sort = safeSort(query)
   const { safePage, safeLimit, skip } = parsePaging(query)
 
-  // Buscar equipos/areas donde está el personal (proyección mínima)
   const [teams, areas] = await Promise.all([
     Team.find({ personal_ids: pid }, { _id: 1 }).limit(500).lean(),
     Area.find({ personal_ids: pid }, { _id: 1 }).limit(500).lean(),
@@ -391,7 +415,7 @@ export async function listAssignedToPersonal(query) {
 }
 
 // ======================================================
-// COUNT (para reportes rápidos)
+// COUNT
 // ======================================================
 export async function countTickets(query) {
   const filter = buildFilters(query)
@@ -411,7 +435,7 @@ export async function countTickets(query) {
 }
 
 // ======================================================
-// PUT excepcional (si lo usas)
+// PUT excepcional
 // ======================================================
 export async function updateTicketPut(id, payload) {
   const actor = String(payload.id_personal || payload.updatedBy || '').trim()
@@ -422,7 +446,6 @@ export async function updateTicketPut(id, payload) {
     throw err
   }
 
-  // Solo campos permitidos (evita que te cambien todo)
   const allowed = [
     'orgId',
     'tipo',
@@ -470,16 +493,13 @@ export async function patchState(
     throw err
   }
 
-  // actualizar estado
   ticket.estado_id = estado_id
   ticket.updatedBy = actor
 
-  // actualizar fecha estimada si viene
   if (fecha_estimada !== undefined) {
     ticket.fecha_estimada = fecha_estimada ? new Date(fecha_estimada) : null
   }
 
-  // evento historial
   ticket.estado_historial.push({
     estado_id,
     nota: (nota || '').trim(),
@@ -494,10 +514,6 @@ export async function patchState(
     changedAt: now,
   })
 
-  // 👇 OJO: aquí NO sabemos cuál estado es "cerrado" porque depende de catálogo.
-  // Si quieres: cuando cierres, usa endpoint dedicado o envía un flag.
-  // Por ahora: si ya existe fecha_estimada y llega fecha_cierre_real en payload, calculamos.
-  // (Puedes mejorar cuando tengas estados "cerrado" definidos en catálogo)
   if (payloadHasCloseFlag({ estado_id })) {
     ticket.fecha_cierre_real = now
     if (ticket.fecha_estimada) {
@@ -510,32 +526,38 @@ export async function patchState(
 
   await ticket.save()
 
-  // Notificaciones (si existe)
+  // Notificaciones
   try {
     const participants = await computeTicketParticipants(ticket)
+    const creador = String(ticket.creado_por || '').trim()
+
     await dispatchNotifications({
       actor_id_personal: actor,
       to_ids: participants,
       type: 'ticket.state_changed',
       title: 'Estado actualizado',
       body: `Estado actualizado en ${ticket.code}`,
-      target: ticketTarget(ticket._id),
+      target: ticketTargetBase(ticket._id),
+      // ✅ Si el receptor es el creador => MisCreaciones, si no => MisTareas
+      targetResolver: to => {
+        const pid = String(to).trim()
+        return pid && pid === creador
+          ? ticketTargetMisCreaciones(ticket._id)
+          : ticketTargetMisTareas(ticket._id)
+      },
     })
   } catch {}
 
   return ticket.toObject()
 }
 
-// helper opcional para cierre (ajústalo luego a tu catálogo real)
+// helper opcional para cierre
 function payloadHasCloseFlag({ estado_id }) {
-  // Por ahora: NO cierra automáticamente.
-  // Si quieres cierre automático, cambia esta función para detectar estados de cierre por catálogo.
   return false
 }
 
 // ======================================================
 // PATCH asignación / watchers / operación / adjuntos
-// (implementaciones simples y seguras)
 // ======================================================
 export async function patchAssign(id, { id_personal, asignado_a }) {
   const actor = String(id_personal).trim()

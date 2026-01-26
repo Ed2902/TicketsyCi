@@ -74,10 +74,73 @@ export async function readAll({ id_personal }) {
 }
 
 /**
+ * ✅ NUEVO: marcar como leídas todas las notificaciones de un ticket para un usuario
+ * Se usa cuando el usuario abre el desplegable del ticket.
+ */
+export async function readByTicketId({ id_personal, ticketId }) {
+  const pid = String(id_personal).trim()
+  const tid = String(ticketId).trim()
+
+  if (!pid || !tid) {
+    const err = new Error('id_personal y ticketId son requeridos.')
+    err.status = 400
+    throw err
+  }
+
+  const r = await Notification.updateMany(
+    {
+      to_id_personal: pid,
+      isRead: false,
+      'target.type': 'ticket',
+      'target.params.ticketId': tid,
+    },
+    { $set: { isRead: true, readAt: new Date() } }
+  )
+
+  return { modified: r.modifiedCount || 0 }
+}
+
+/**
+ * ✅ NUEVO (genérico): marcar leído por target
+ * Por si mañana quieres targets distintos a "ticket".
+ */
+export async function readByTarget({ id_personal, targetType, params = {} }) {
+  const pid = String(id_personal).trim()
+  const ttype = String(targetType || '').trim()
+
+  if (!pid || !ttype) {
+    const err = new Error('id_personal y targetType son requeridos.')
+    err.status = 400
+    throw err
+  }
+
+  // armamos query dinámico de params
+  const paramQuery = {}
+  for (const [k, v] of Object.entries(params || {})) {
+    if (v === undefined || v === null) continue
+    paramQuery[`target.params.${k}`] = String(v).trim()
+  }
+
+  const r = await Notification.updateMany(
+    {
+      to_id_personal: pid,
+      isRead: false,
+      'target.type': ttype,
+      ...paramQuery,
+    },
+    { $set: { isRead: true, readAt: new Date() } }
+  )
+
+  return { modified: r.modifiedCount || 0 }
+}
+
+/**
  * Dispatcher interno
  * - Guarda en DB
  * - Envía Web Push
  * - Excluye actor
+ *
+ * ✅ targetResolver(to_id_personal) opcional para definir target por receptor
  */
 export async function dispatchNotifications({
   actor_id_personal,
@@ -87,6 +150,7 @@ export async function dispatchNotifications({
   body,
   target,
   meta = {},
+  targetResolver,
 }) {
   const actor = String(actor_id_personal).trim()
 
@@ -96,38 +160,42 @@ export async function dispatchNotifications({
 
   if (!recipients.length) return { created: 0, pushed: 0 }
 
-  // 1️⃣ Guardar en Mongo
-  const docs = recipients.map(to => ({
-    to_id_personal: to,
-    type,
-    title,
-    body,
-    target,
-    meta,
-    isRead: false,
-    readAt: null,
-    createdBy: actor,
-  }))
+  const docs = recipients.map(to => {
+    const resolvedTarget =
+      typeof targetResolver === 'function' ? targetResolver(to) : target
+
+    return {
+      to_id_personal: to,
+      type,
+      title,
+      body,
+      target: resolvedTarget,
+      meta,
+      isRead: false,
+      readAt: null,
+      createdBy: actor,
+    }
+  })
 
   await Notification.insertMany(docs, { ordered: false })
 
-  // 2️⃣ Web Push (NO bloqueante)
+  // Push (no bloqueante)
   let pushed = 0
   for (const to of recipients) {
+    const resolvedTarget =
+      typeof targetResolver === 'function' ? targetResolver(to) : target
+
     const payload = {
       title,
       body,
       data: {
-        url: target?.url || '/',
-        target,
+        url: resolvedTarget?.url || '/',
+        target: resolvedTarget,
         meta,
       },
     }
 
-    sendPushToUser({
-      id_personal: to,
-      payload,
-    })
+    sendPushToUser({ id_personal: to, payload })
       .then(r => {
         if (r?.sent) pushed += r.sent
       })

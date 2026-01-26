@@ -47,3 +47,20 @@ export async function readAll(req, res) {
       .json({ ok: false, error: e.message || 'Error marcando todo leído' })
   }
 }
+
+/**
+ * ✅ NUEVO
+ * Marca como leídas todas las notificaciones de un ticket
+ * Se usa cuando el usuario abre el desplegable del ticket
+ */
+export async function readByTicket(req, res) {
+  try {
+    const data = await Svc.readByTicketId(req.body)
+    return res.json({ ok: true, ...data })
+  } catch (e) {
+    return res.status(e.status || 500).json({
+      ok: false,
+      error: e.message || 'Error marcando notificaciones del ticket',
+    })
+  }
+}
