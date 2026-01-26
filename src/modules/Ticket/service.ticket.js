@@ -2,7 +2,7 @@ import mongoose from 'mongoose'
 import { Ticket } from './model.ticket.js'
 import { TicketCounter } from './model.ticketCounter.js'
 
-import { Area } from '../areas/model.area.js'
+import { Area } from '../Areas/model.area.js'
 import { Team } from '../teams/model.team.js'
 
 import {
