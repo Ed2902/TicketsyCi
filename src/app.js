@@ -8,11 +8,11 @@ import { fileURLToPath } from 'url'
 import swaggerUi from 'swagger-ui-express'
 
 // Routers (case EXACTO según tu estructura)
-import areasRouter from './modules/Areas/routes.area.js' // ✅ routes.area.js (plural)
-import catalogRouter from './modules/Catalogos/routes.catalog.js' // ✅ Catalogos (C mayúscula)
-import teamsRouter from './modules/teams/routes.team.js' // ✅ teams (minúscula)
-import ticketsRouter from './modules/Ticket/routes.ticket.js' // ✅ Ticket (T mayúscula)
-import chatsRouter from './modules/chats/routes.chat.js' // ✅ chats (minúscula)
+import areasRouter from './modules/Areas/routes.area.js'
+import catalogRouter from './modules/Catalogos/routes.catalog.js'
+import teamsRouter from './modules/teams/routes.team.js'
+import ticketsRouter from './modules/Ticket/routes.ticket.js'
+import chatsRouter from './modules/chats/routes.chat.js'
 import notificationsRouter from './modules/notifications/routes.notification.js'
 
 // Middlewares
@@ -62,7 +62,8 @@ export function createApp() {
   app.use(corsMw)
 
   // ✅ Responder preflight ANTES de auth (clave para CORS)
-  app.options('*', corsMw)
+  // ⚠️ '*' puede romper con path-to-regexp/router nuevos → usa regex
+  app.options(/.*/, corsMw)
 
   app.use(helmet())
   app.use(express.json({ limit: '10mb' }))
