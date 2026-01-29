@@ -1,10 +1,7 @@
-// src/modules/chats/service.chat.js
 import mongoose from 'mongoose'
 import { Conversation } from './model.conversation.js'
 import { Message } from './model.message.js'
 import { encryptText, decryptText } from './crypto.message.js'
-
-// ✅ Notifications
 import { dispatchNotifications } from '../notifications/service.notification.js'
 
 function uniqTrim(arr) {
@@ -14,7 +11,7 @@ function uniqTrim(arr) {
 function parsePaging({ page, limit }) {
   const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 100)
   const safePage = Math.max(Number(page) || 1, 1)
-  const skip = (safePage - 1) * safeLimit
+  const skip = (safePage - safeLimit) * 0 + (safePage - 1) * safeLimit
   return { safePage, safeLimit, skip }
 }
 
@@ -25,18 +22,21 @@ async function assertParticipant(chatId, id_personal) {
     err.status = 404
     throw err
   }
+
   const pid = String(id_personal).trim()
   if (!chat.participants?.includes(pid)) {
     const err = new Error('No autorizado: no eres participante del chat.')
     err.status = 403
     throw err
   }
+
   return chat
 }
 
-/**
- * Crear chat libre
- */
+export async function assertChatParticipant(chatId, id_personal) {
+  return assertParticipant(chatId, id_personal)
+}
+
 export async function createFreeChat({
   id_personal,
   title = '',
@@ -58,10 +58,6 @@ export async function createFreeChat({
   return chat.toObject()
 }
 
-/**
- * Listar mis chats (solo donde participo), paginado, último actualizado primero.
- * Incluye unreadCount por chat (costo: 1 count por chat en página).
- */
 export async function listMyChats({
   id_personal,
   page,
@@ -126,9 +122,6 @@ export async function listMyChats({
   }
 }
 
-/**
- * Mensajes paginados (último primero) - devuelve text descifrado
- */
 export async function getMessages({ chatId, id_personal, page, limit }) {
   await assertParticipant(chatId, id_personal)
 
@@ -159,9 +152,6 @@ export async function getMessages({ chatId, id_personal, page, limit }) {
   }
 }
 
-/**
- * Enviar mensaje (cifra texto) + ✅ Notificaciones automáticas + ✅ Socket realtime
- */
 export async function sendMessage({
   chatId,
   id_personal,
@@ -184,7 +174,6 @@ export async function sendMessage({
     attachments: Array.isArray(attachments) ? attachments : [],
   })
 
-  // actualizar lastMessage
   await Conversation.findByIdAndUpdate(chatId, {
     $set: {
       updatedBy: pid,
@@ -197,67 +186,36 @@ export async function sendMessage({
     text: decryptText(msg.toObject()),
   }
 
-  // ============================
-  // ✅ Realtime: mensaje al room del chat
-  // ============================
-  const io = globalThis.__io
-  if (io) {
-    io.to(String(chatId)).emit('message:new', {
-      chatId: String(chatId),
-      message: messageOut,
-    })
-  }
-
-  // ============================
-  // ✅ Notificaciones automáticas (DB + realtime)
-  // ============================
   const recipients = (chat.participants || []).filter(
     p => String(p).trim() && String(p).trim() !== pid
   )
 
-  // target de navegación al hacer click
   const ticketId =
     chat.contextType === 'ticket' && chat.contextId
       ? String(chat.contextId)
       : null
 
-  const target = {
-    type: 'chat',
-    params: ticketId
-      ? { chatId: String(chatId), ticketId }
-      : { chatId: String(chatId) },
-    url: `/chats/${String(chatId)}`,
-  }
-
-  // crea notificaciones en DB (una por usuario)
-  const created = await dispatchNotifications({
-    actor_id_personal: pid,
-    to_ids: recipients,
-    type: 'chat.message_new',
+  await dispatchNotifications({
+    orgId: null,
+    to_ids_personal: recipients,
+    createdBy: pid,
+    type: 'chat.message',
     title: 'Nuevo mensaje',
-    body: preview, // genérico
-    target,
+    body: preview,
+    target: {
+      type: 'chat',
+      params: { chatId: String(chatId), ...(ticketId ? { ticketId } : {}) },
+      url: `/chats/${String(chatId)}`,
+    },
     meta: {
       chatId: String(chatId),
       ...(ticketId ? { ticketId } : {}),
     },
   })
 
-  // realtime: notificación por usuario
-  if (io && created?.items?.length) {
-    for (const n of created.items) {
-      const to = String(n.to_id_personal || '').trim()
-      if (!to) continue
-      io.to(`user:${to}`).emit('notification:new', n)
-    }
-  }
-
   return messageOut
 }
 
-/**
- * Marcar chat como leído
- */
 export async function markRead({ chatId, id_personal, at }) {
   const chat = await assertParticipant(chatId, id_personal)
   const pid = String(id_personal).trim()
@@ -274,9 +232,6 @@ export async function markRead({ chatId, id_personal, at }) {
   return { lastReadAt, chat }
 }
 
-/**
- * Editar participantes (solo free)
- */
 export async function patchParticipants({
   chatId,
   id_personal,
@@ -336,11 +291,6 @@ export async function deactivateChat({ chatId, id_personal }) {
   return updated
 }
 
-/**
- * ===========================
- * Helpers para Tickets
- * ===========================
- */
 export function buildTicketParticipants({
   creado_por,
   watchers,
@@ -363,48 +313,50 @@ export async function ensureTicketChat({
   actor_id_personal,
 }) {
   const pid = String(actor_id_personal).trim()
+  const users = uniqTrim(participants)
 
-  const chat = await Conversation.findOneAndUpdate(
-    { contextType: 'ticket', contextId: new mongoose.Types.ObjectId(ticketId) },
-    {
-      $setOnInsert: {
-        contextType: 'ticket',
-        contextId: new mongoose.Types.ObjectId(ticketId),
-        title: '',
-        activo: true,
-        createdBy: pid,
-      },
-      $set: {
-        participants: uniqTrim(participants),
-        updatedBy: pid,
-      },
-    },
-    { upsert: true, new: true }
-  ).lean()
+  const existing = await Conversation.findOne({
+    contextType: 'ticket',
+    contextId: String(ticketId),
+    activo: true,
+  }).lean()
 
-  return chat
+  if (existing) {
+    await Conversation.findByIdAndUpdate(existing._id, {
+      $set: { updatedBy: pid },
+      $addToSet: { participants: { $each: users } },
+    })
+    return { chat: existing, created: false }
+  }
+
+  const created = await Conversation.create({
+    contextType: 'ticket',
+    contextId: String(ticketId),
+    title: '',
+    participants: users,
+    activo: true,
+    createdBy: pid,
+    updatedBy: pid,
+  })
+
+  return { chat: created.toObject(), created: true }
 }
 
-export async function syncTicketChat({
-  ticketId,
+export async function syncTicketChatParticipants({
+  chatId,
   participants,
   actor_id_personal,
 }) {
   const pid = String(actor_id_personal).trim()
+  await Conversation.findByIdAndUpdate(chatId, {
+    $set: { participants: uniqTrim(participants), updatedBy: pid },
+  })
+}
 
-  const updated = await Conversation.findOneAndUpdate(
-    { contextType: 'ticket', contextId: new mongoose.Types.ObjectId(ticketId) },
-    {
-      $set: {
-        participants: uniqTrim(participants),
-        updatedBy: pid,
-      },
-    },
-    { new: true }
-  ).lean()
-
-  if (!updated) {
-    return ensureTicketChat({ ticketId, participants, actor_id_personal: pid })
-  }
-  return updated
+export async function syncTicketChat({
+  chatId,
+  participants,
+  actor_id_personal,
+}) {
+  return syncTicketChatParticipants({ chatId, participants, actor_id_personal })
 }

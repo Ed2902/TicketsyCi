@@ -1,5 +1,5 @@
 // src/server.js
-import 'dotenv/config' // ✅ esto carga .env antes que cualquier otra cosa
+import 'dotenv/config'
 import http from 'http'
 import mongoose from 'mongoose'
 import { Server as SocketIOServer } from 'socket.io'
@@ -14,10 +14,6 @@ async function start() {
     if (process.env.MONGO_URI) {
       await mongoose.connect(process.env.MONGO_URI)
       console.log('✅ Mongo conectado')
-    } else {
-      console.warn(
-        '⚠️  Falta MONGO_URI en .env (si ya conectas en otro lado, ignora esto).'
-      )
     }
 
     const app = createApp()
@@ -29,14 +25,16 @@ async function start() {
 
     globalThis.__io = io
 
-    io.on('connection', socket => {
-      socket.on('user:join', ({ id_personal }) => {
-        const pid = String(id_personal || '').trim()
-        if (!pid) return
-        socket.join(`user:${pid}`)
-        socket.emit('user:joined', { room: `user:${pid}` })
+    if (process.env.SOCKET_ALLOW_USER_JOIN === 'true') {
+      io.on('connection', socket => {
+        socket.on('user:join', ({ id_personal }) => {
+          const pid = String(id_personal || '').trim()
+          if (!pid) return
+          socket.join(`user:${pid}`)
+          socket.emit('user:joined', { room: `user:${pid}` })
+        })
       })
-    })
+    }
 
     registerChatSocket(io)
 

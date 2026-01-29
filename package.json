@@ -8,7 +8,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node src/server.js",
     "dev": "nodemon --watch src --ext js,json --exec node src/server.js",
-    "swagger": "node src/swagger.js"
+    "swagger": "node src/swagger.js",
+    "cleanup:chat-uploads": "node src/modules/chats/cleanup.chatUploads.js --run"
   },
   "keywords": [],
   "author": "",

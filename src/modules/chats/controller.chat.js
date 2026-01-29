@@ -39,6 +39,26 @@ export async function sendMessage(req, res) {
   try {
     const { chatId } = req.params
     const message = await ChatService.sendMessage({ chatId, ...req.body })
+
+    const io = globalThis.__io
+    if (io) {
+      io.to(String(chatId)).emit('chat:message:new', {
+        chatId,
+        message,
+      })
+
+      if (message?.to_id_personal) {
+        io.to(`user:${message.to_id_personal}`).emit('notification:new', {
+          type: 'chat.message',
+          chatId,
+          messageId: message._id,
+          title: 'Nuevo mensaje',
+          body: message.body || '',
+          createdAt: message.createdAt,
+        })
+      }
+    }
+
     return res.status(201).json({ ok: true, message })
   } catch (e) {
     return res
@@ -51,6 +71,16 @@ export async function markRead(req, res) {
   try {
     const { chatId } = req.params
     const data = await ChatService.markRead({ chatId, ...req.body })
+
+    const io = globalThis.__io
+    if (io) {
+      io.to(String(chatId)).emit('chat:read:update', {
+        chatId,
+        id_personal: String(req.body.id_personal || '').trim(),
+        lastReadAt: data.lastReadAt,
+      })
+    }
+
     return res.json({ ok: true, lastReadAt: data.lastReadAt })
   } catch (e) {
     return res
@@ -63,6 +93,15 @@ export async function patchParticipants(req, res) {
   try {
     const { chatId } = req.params
     const chat = await ChatService.patchParticipants({ chatId, ...req.body })
+
+    const io = globalThis.__io
+    if (io) {
+      io.to(String(chatId)).emit('chat:participants:update', {
+        chatId,
+        participants: chat.participants,
+      })
+    }
+
     return res.json({ ok: true, chat })
   } catch (e) {
     return res
@@ -75,6 +114,12 @@ export async function deactivateChat(req, res) {
   try {
     const { chatId } = req.params
     const chat = await ChatService.deactivateChat({ chatId, ...req.body })
+
+    const io = globalThis.__io
+    if (io) {
+      io.to(String(chatId)).emit('chat:deactivated', { chatId })
+    }
+
     return res.json({ ok: true, chat })
   } catch (e) {
     return res
