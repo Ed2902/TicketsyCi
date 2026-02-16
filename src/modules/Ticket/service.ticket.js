@@ -34,13 +34,14 @@ function safeSort({ sortBy, sortDir }) {
     'codeSeq',
     'code',
     'fecha_estimada',
+    'lastMoveAt', // ✅ NUEVO
   ])
 
   const by = allowed.has(String(sortBy)) ? String(sortBy) : 'updatedAt'
   const dir =
     String(sortDir).toLowerCase() === 'asc' || String(sortDir) === '1' ? 1 : -1
 
-  return { [by]: dir }
+  return { by, dir }
 }
 
 function toObjectId(v, field = 'id') {
@@ -52,8 +53,28 @@ function toObjectId(v, field = 'id') {
   return new mongoose.Types.ObjectId(v)
 }
 
+function parseObjectIdList(value, fieldName = 'ids') {
+  const raw = String(value || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+
+  if (!raw.length) return []
+
+  const out = []
+  for (const v of raw) {
+    if (!mongoose.Types.ObjectId.isValid(v)) {
+      const err = new Error(`${fieldName} inválido`)
+      err.status = 400
+      throw err
+    }
+    out.push(new mongoose.Types.ObjectId(v))
+  }
+  return out
+}
+
 // ======================================================
-// Filtros (no explosivos)
+// Filtros
 // ======================================================
 function buildFilters(q) {
   const filter = {}
@@ -62,7 +83,33 @@ function buildFilters(q) {
   if (q.orgId) filter.orgId = String(q.orgId).trim()
   if (q.tipo) filter.tipo = String(q.tipo)
 
+  // ✅ Estado actual (campo directo)
   if (q.estado_id) filter.estado_id = toObjectId(q.estado_id, 'estado_id')
+
+  // ✅ NUEVO: múltiples estados (in)
+  // ejemplo: ?estado_ids=65ab...,65ac...
+  if (q.estado_ids) {
+    const ids = parseObjectIdList(q.estado_ids, 'estado_ids')
+    if (ids.length) filter.estado_id = { $in: ids }
+  }
+
+  // ✅ NUEVO: excluir estados (not in)
+  // ejemplo: ?exclude_estado_ids=65ab...,65ac...
+  if (q.exclude_estado_ids) {
+    const ids = parseObjectIdList(q.exclude_estado_ids, 'exclude_estado_ids')
+    if (ids.length) {
+      // si ya hay estado_id con $in, combinamos
+      if (filter.estado_id && typeof filter.estado_id === 'object') {
+        filter.estado_id = { ...filter.estado_id, $nin: ids }
+      } else if (filter.estado_id) {
+        // si era un ObjectId puntual, lo convertimos a $in
+        filter.estado_id = { $in: [filter.estado_id], $nin: ids }
+      } else {
+        filter.estado_id = { $nin: ids }
+      }
+    }
+  }
+
   if (q.prioridad_id)
     filter.prioridad_id = toObjectId(q.prioridad_id, 'prioridad_id')
   if (q.categoria_id)
@@ -90,17 +137,39 @@ function buildFilters(q) {
     filter['asignado_a.id'] = String(q.team_id).trim()
   }
 
+  // ✅ MEJOR: búsqueda en más campos
   if (q.search && String(q.search).trim()) {
     const s = String(q.search).trim()
     filter.$or = [
       { titulo: { $regex: s, $options: 'i' } },
       { descripcion: { $regex: s, $options: 'i' } },
       { 'operacion.cliente': { $regex: s, $options: 'i' } },
+      { 'operacion.producto': { $regex: s, $options: 'i' } },
+      { 'operacion.lote': { $regex: s, $options: 'i' } },
       { code: { $regex: s, $options: 'i' } },
     ]
   }
 
   return filter
+}
+
+// ======================================================
+// Helpers de agregación: lastMoveAt
+// ======================================================
+// lastMoveAt = max(estado_historial.changedAt) o updatedAt si no hay historial
+function withLastMoveAtStage() {
+  return {
+    $addFields: {
+      lastMoveAt: {
+        $ifNull: [{ $max: '$estado_historial.changedAt' }, '$updatedAt'],
+      },
+    },
+  }
+}
+
+function sortStage({ by, dir }) {
+  if (by === 'lastMoveAt') return { $sort: { lastMoveAt: dir } }
+  return { $sort: { [by]: dir } }
 }
 
 // ======================================================
@@ -170,7 +239,7 @@ function ticketTargetBase(ticketId) {
   return {
     type: 'ticket',
     params: { ticketId: String(ticketId) },
-    url: '/', // se sobreescribe con resolver
+    url: '/',
   }
 }
 
@@ -178,7 +247,9 @@ function ticketTargetMisTareas(ticketId) {
   return {
     type: 'ticket',
     params: { ticketId: String(ticketId) },
-    url: `/tickets?ticketsSection=misTareas&ticketId=${encodeURIComponent(String(ticketId))}`,
+    url: `/tickets?ticketsSection=misTareas&ticketId=${encodeURIComponent(
+      String(ticketId)
+    )}`,
   }
 }
 
@@ -187,7 +258,9 @@ function ticketTargetMisCreaciones(ticketId) {
   return {
     type: 'ticket',
     params: { ticketId: id },
-    url: `/tickets?ticketsSection=misCreaciones&ticketId=${encodeURIComponent(id)}`,
+    url: `/tickets?ticketsSection=misCreaciones&ticketId=${encodeURIComponent(
+      id
+    )}`,
   }
 }
 
@@ -255,7 +328,6 @@ export async function createTicket(payload) {
 
   const ticket = (await Ticket.create(base)).toObject()
 
-  // chat + notificaciones
   try {
     const participants = await computeTicketParticipants(ticket)
 
@@ -267,8 +339,6 @@ export async function createTicket(payload) {
     await Ticket.findByIdAndUpdate(ticket._id, { chatId: chat._id })
     ticket.chatId = chat._id
 
-    // ✅ Notificación al crear ticket
-    // En creación, los receptores (asignados/watchers/apoyo) deben ir a MisTareas
     await dispatchNotifications({
       actor_id_personal: actor,
       to_ids: participants,
@@ -299,7 +369,7 @@ export async function getTicketById(id) {
 }
 
 // ======================================================
-// LIST (general)
+// LIST (general) - AGG (lastMoveAt)
 // ======================================================
 export async function listTickets(query) {
   const { safePage, safeLimit, skip } = parsePaging(query)
@@ -307,7 +377,13 @@ export async function listTickets(query) {
   const sort = safeSort(query)
 
   const [items, total] = await Promise.all([
-    Ticket.find(filter).sort(sort).skip(skip).limit(safeLimit).lean(),
+    Ticket.aggregate([
+      { $match: filter },
+      withLastMoveAtStage(),
+      sortStage(sort),
+      { $skip: skip },
+      { $limit: safeLimit },
+    ]),
     Ticket.countDocuments(filter),
   ])
 
@@ -318,7 +394,7 @@ export async function listTickets(query) {
       page: safePage,
       limit: safeLimit,
       pages: Math.ceil(total / safeLimit) || 1,
-      sort,
+      sort: { [sort.by]: sort.dir },
     },
   }
 }
@@ -335,7 +411,6 @@ export async function listMine(query) {
   }
 
   const base = buildFilters(query)
-
   const pid = String(id_personal).trim()
 
   const conditions = {
@@ -364,7 +439,7 @@ export async function listMine(query) {
 }
 
 // ======================================================
-// LIST assigned (a personal)
+// LIST assigned (a personal) - AGG (lastMoveAt)
 // ======================================================
 export async function listAssignedToPersonal(query) {
   const { id_personal } = query
@@ -398,7 +473,13 @@ export async function listAssignedToPersonal(query) {
   ]
 
   const [items, total] = await Promise.all([
-    Ticket.find(base).sort(sort).skip(skip).limit(safeLimit).lean(),
+    Ticket.aggregate([
+      { $match: base },
+      withLastMoveAtStage(),
+      sortStage(sort),
+      { $skip: skip },
+      { $limit: safeLimit },
+    ]),
     Ticket.countDocuments(base),
   ])
 
@@ -409,7 +490,7 @@ export async function listAssignedToPersonal(query) {
       page: safePage,
       limit: safeLimit,
       pages: Math.ceil(total / safeLimit) || 1,
-      sort,
+      sort: { [sort.by]: sort.dir },
     },
   }
 }
@@ -514,6 +595,9 @@ export async function patchState(
     changedAt: now,
   })
 
+  // ⚠️ tu payloadHasCloseFlag está en false.
+  // Esto está bien si el frontend solo filtra por estado_id "Cerrado".
+  // Si quieres que "cerrado" sea por fecha_cierre_real, aquí deberías detectar cierre.
   if (payloadHasCloseFlag({ estado_id })) {
     ticket.fecha_cierre_real = now
     if (ticket.fecha_estimada) {
@@ -526,7 +610,6 @@ export async function patchState(
 
   await ticket.save()
 
-  // Notificaciones
   try {
     const participants = await computeTicketParticipants(ticket)
     const creador = String(ticket.creado_por || '').trim()
@@ -538,7 +621,6 @@ export async function patchState(
       title: 'Estado actualizado',
       body: `Estado actualizado en ${ticket.code}`,
       target: ticketTargetBase(ticket._id),
-      // ✅ Si el receptor es el creador => MisCreaciones, si no => MisTareas
       targetResolver: to => {
         const pid = String(to).trim()
         return pid && pid === creador
