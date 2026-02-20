@@ -150,6 +150,13 @@ function buildFilters(q) {
     ]
   }
 
+  //Filtro por createdAt (fecha real de creación)
+  if (q.createdAt_desde || q.createdAt_hasta) {
+    filter.createdAt = {}
+    if (q.createdAt_desde) filter.createdAt.$gte = new Date(q.createdAt_desde)
+    if (q.createdAt_hasta) filter.createdAt.$lte = new Date(q.createdAt_hasta)
+  }
+
   return filter
 }
 
@@ -788,4 +795,67 @@ export async function deactivateTicket(id, { id_personal }) {
   ticket.updatedBy = actor
   await ticket.save()
   return ticket.toObject()
+}
+// ======================================================
+// LIST by target (personal/team/area) + rango createdAt
+// ======================================================
+export async function listByTargetCreatedRange(query) {
+  const { targetType, targetId } = query
+
+  if (!targetType || !targetId) {
+    const err = new Error('targetType y targetId son requeridos.')
+    err.status = 400
+    throw err
+  }
+
+  const type = String(targetType).trim().toLowerCase()
+  const id = String(targetId).trim()
+
+  if (!['personal', 'team', 'area'].includes(type)) {
+    const err = new Error('targetType inválido. Use: personal | team | area.')
+    err.status = 400
+    throw err
+  }
+
+  // team/area deberían ser ObjectId válidos (porque vienen de Mongo)
+  if (
+    (type === 'team' || type === 'area') &&
+    !mongoose.Types.ObjectId.isValid(id)
+  ) {
+    const err = new Error('targetId inválido para team/area.')
+    err.status = 400
+    throw err
+  }
+
+  // Reutiliza tus filtros base (incluye createdAt_desde/hasta que agregaste)
+  const base = buildFilters(query)
+
+  // Match por asignación directa al target
+  base['asignado_a.tipo'] = type
+  base['asignado_a.id'] = id
+
+  const sort = safeSort(query)
+  const { safePage, safeLimit, skip } = parsePaging(query)
+
+  const [items, total] = await Promise.all([
+    Ticket.aggregate([
+      { $match: base },
+      withLastMoveAtStage(),
+      sortStage(sort),
+      { $skip: skip },
+      { $limit: safeLimit },
+    ]),
+    Ticket.countDocuments(base),
+  ])
+
+  return {
+    items,
+    meta: {
+      total,
+      page: safePage,
+      limit: safeLimit,
+      pages: Math.ceil(total / safeLimit) || 1,
+      sort: { [sort.by]: sort.dir },
+    },
+  }
 }
