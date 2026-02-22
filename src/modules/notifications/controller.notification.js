@@ -64,3 +64,15 @@ export async function readByTicket(req, res) {
     })
   }
 }
+
+export async function readByTarget(req, res) {
+  try {
+    const data = await Svc.readByTarget(req.body)
+    return res.json({ ok: true, ...data })
+  } catch (e) {
+    return res.status(e.status || 500).json({
+      ok: false,
+      error: e.message || 'Error marcando notificaciones por target',
+    })
+  }
+}

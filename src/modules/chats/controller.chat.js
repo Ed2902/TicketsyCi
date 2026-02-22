@@ -42,20 +42,84 @@ export async function sendMessage(req, res) {
 
     const io = globalThis.__io
     if (io) {
+      // Emitir a todos en el chat que hay un nuevo mensaje
       io.to(String(chatId)).emit('chat:message:new', {
         chatId,
         message,
       })
 
-      if (message?.to_id_personal) {
-        io.to(`user:${message.to_id_personal}`).emit('notification:new', {
-          type: 'chat.message',
-          chatId,
-          messageId: message._id,
-          title: 'Nuevo mensaje',
-          body: message.body || '',
-          createdAt: message.createdAt,
-        })
+      // Obtener el chat para notificar a los participantes
+      const { Conversation } = await import('./model.conversation.js')
+      const { Notification } =
+        await import('../notifications/model.notification.js')
+      const { sendPushToUser } =
+        await import('../notifications/service.push.js')
+      const chat = await Conversation.findById(chatId).lean()
+
+      const senderId = String(message?.sender_id_personal || '').trim()
+      const bodyPreview = String(message?.text || '')
+        .substring(0, 80)
+        .trim()
+      const notificationBody = bodyPreview || '[Archivo adjunto]'
+
+      if (chat && chat.participants) {
+        for (const participantId of chat.participants) {
+          const pid = String(participantId).trim()
+          // No notificar al remitente, solo a los otros participantes
+          if (pid && pid !== senderId) {
+            try {
+              // ✅ GUARDAR en BD
+              const notification = await Notification.create({
+                to_id_personal: pid,
+                type: 'chat.message',
+                title: 'Nuevo mensaje en chat',
+                body: notificationBody,
+                target: {
+                  type: 'chat',
+                  params: {
+                    chatId: String(chatId),
+                    messageId: String(message._id),
+                  },
+                },
+                createdBy: senderId,
+                isRead: false,
+              })
+
+              // Emitir socket.io
+              io.to(`user:${pid}`).emit('notification:new', {
+                _id: notification._id,
+                type: 'chat.message',
+                chatId,
+                messageId: message._id,
+                title: 'Nuevo mensaje en chat',
+                body: notificationBody,
+                createdAt: notification.createdAt,
+              })
+
+              await sendPushToUser({
+                id_personal: pid,
+                payload: {
+                  title: 'Nuevo mensaje en chat',
+                  body: notificationBody,
+                  data: {
+                    url: `/home?openChatId=${encodeURIComponent(
+                      String(chatId)
+                    )}`,
+                    target: {
+                      type: 'chat',
+                      params: {
+                        chatId: String(chatId),
+                        messageId: String(message._id),
+                      },
+                    },
+                  },
+                },
+              })
+            } catch (err) {
+              // Ignorar errores de notificación para no bloquear el envío del mensaje
+            }
+          }
+        }
       }
     }
 

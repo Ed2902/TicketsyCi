@@ -25,16 +25,16 @@ async function start() {
 
     globalThis.__io = io
 
-    if (process.env.SOCKET_ALLOW_USER_JOIN === 'true') {
-      io.on('connection', socket => {
-        socket.on('user:join', ({ id_personal }) => {
-          const pid = String(id_personal || '').trim()
-          if (!pid) return
-          socket.join(`user:${pid}`)
-          socket.emit('user:joined', { room: `user:${pid}` })
-        })
+    // ✅ SIEMPRE habilitar que los usuarios se unan a sus salas personales
+    io.on('connection', socket => {
+      socket.on('user:join', ({ id_personal }) => {
+        const pid = String(id_personal || '').trim()
+        if (!pid) return
+        socket.join(`user:${pid}`)
+        console.log(`✅ Usuario ${pid} unido a sala user:${pid}`)
+        socket.emit('user:joined', { room: `user:${pid}` })
       })
-    }
+    })
 
     registerChatSocket(io)
 

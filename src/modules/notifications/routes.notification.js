@@ -38,6 +38,7 @@ router.patch('/read-all', validateReadAll, C.readAll)
 
 // ✅ NUEVO: marcar notificaciones como leídas por ticket
 router.patch('/read-by-ticket', C.readByTicket)
+router.patch('/read-by-target', C.readByTarget)
 
 // =====================
 // Web Push (suscripción)
